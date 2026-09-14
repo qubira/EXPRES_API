@@ -55,17 +55,24 @@ CREATE TABLE IF NOT EXISTS productos (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tienda_id    UUID NOT NULL REFERENCES tiendas(id) ON DELETE CASCADE,
   nombre       VARCHAR(140) NOT NULL,
+  marca        VARCHAR(100),
   descripcion  TEXT,
   categoria    VARCHAR(40) NOT NULL,
+  subcategoria VARCHAR(80),
   precio       NUMERIC(10,2) NOT NULL CHECK (precio >= 0),
+  unidad       VARCHAR(20) NOT NULL DEFAULT 'unidad',
   stock        INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
   foto_url     TEXT,
   activo       BOOLEAN NOT NULL DEFAULT true,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS marca VARCHAR(100);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(80);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS unidad VARCHAR(20) NOT NULL DEFAULT 'unidad';
 CREATE INDEX IF NOT EXISTS idx_productos_tienda ON productos(tienda_id);
 CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos(categoria);
+CREATE INDEX IF NOT EXISTS idx_productos_subcategoria ON productos(subcategoria);
 
 -- ---------- REPARTIDORES ----------
 CREATE TABLE IF NOT EXISTS repartidores (

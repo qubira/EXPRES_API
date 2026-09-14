@@ -39,20 +39,21 @@ async function main() {
   }
 
   console.log('Creando productos de ejemplo...');
+  // [tienda, nombre, marca, descripcion, categoria, subcategoria, precio, unidad, stock]
   const productos = [
-    [tiendaIds[0], 'Anticucho x3 palitos', 'Con papa y choclo', 'comida', 18.0, 30],
-    [tiendaIds[0], 'Choripan', 'Chorizo parrillero con pan artesanal', 'comida', 12.0, 25],
-    [tiendaIds[1], 'Jugo de maracuya 1L', 'Recien exprimido', 'bebidas', 10.0, 40],
-    [tiendaIds[1], 'Agua mineral 625ml', 'Bien helada', 'bebidas', 3.5, 100],
-    [tiendaIds[2], 'Traje de baño mujer', 'Varios modelos y tallas', 'ropa', 45.0, 15],
-    [tiendaIds[2], 'Sombrero de paja', 'Proteccion UV', 'ropa', 25.0, 20],
-    [tiendaIds[3], 'Alquiler sombrilla (dia)', 'Incluye instalacion', 'servicios', 20.0, 10],
-    [tiendaIds[3], 'Alquiler cama playera (dia)', 'Con toalla', 'servicios', 15.0, 15],
+    [tiendaIds[0], 'Anticucho x3 palitos', null, 'Con papa y choclo', 'comida', 'anticuchos', 18.0, 'unidad', 30],
+    [tiendaIds[0], 'Choripan', null, 'Chorizo parrillero con pan artesanal', 'comida', 'parrilla', 12.0, 'unidad', 25],
+    [tiendaIds[1], 'Jugo de maracuya 1L', 'Natural', 'Recien exprimido', 'bebidas', 'jugos', 10.0, 'l', 40],
+    [tiendaIds[1], 'Agua mineral 625ml', 'San Luis', 'Bien helada', 'bebidas', 'agua', 3.5, 'ml', 100],
+    [tiendaIds[2], 'Traje de baño mujer', null, 'Varios modelos y tallas', 'ropa', 'trajes de baño', 45.0, 'unidad', 15],
+    [tiendaIds[2], 'Sombrero de paja', null, 'Proteccion UV', 'ropa', 'sombreros', 25.0, 'unidad', 20],
+    [tiendaIds[3], 'Alquiler sombrilla (dia)', null, 'Incluye instalacion', 'servicios', 'sombrillas', 20.0, 'unidad', 10],
+    [tiendaIds[3], 'Alquiler cama playera (dia)', null, 'Con toalla', 'servicios', 'camas', 15.0, 'unidad', 15],
   ];
   for (const p of productos) {
     await db.query(
-      `INSERT INTO productos (tienda_id, nombre, descripcion, categoria, precio, stock)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
+      `INSERT INTO productos (tienda_id, nombre, marca, descripcion, categoria, subcategoria, precio, unidad, stock)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       p
     );
   }

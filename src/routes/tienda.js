@@ -69,14 +69,15 @@ router.get('/productos', async (req, res) => {
 
 router.post('/productos', async (req, res) => {
   try {
-    const { nombre, descripcion, categoria, precio, stock, foto_url } = req.body;
-    if (!nombre || !categoria || precio == null) {
-      return res.status(400).json({ error: 'Nombre, categoria y precio son obligatorios' });
+    const { nombre, marca, descripcion, categoria, subcategoria, precio, unidad, stock, foto_url } = req.body;
+    if (!nombre || !categoria || !subcategoria || precio == null) {
+      return res.status(400).json({ error: 'Nombre, categoria, subcategoria y precio son obligatorios' });
     }
     const { rows } = await db.query(
-      `INSERT INTO productos (tienda_id, nombre, descripcion, categoria, precio, stock, foto_url)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [req.auth.id, nombre, descripcion || null, categoria, precio, stock || 0, foto_url || null]
+      `INSERT INTO productos (tienda_id, nombre, marca, descripcion, categoria, subcategoria, precio, unidad, stock, foto_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+      [req.auth.id, nombre, marca || null, descripcion || null, categoria, subcategoria,
+        precio, unidad || 'unidad', stock || 0, foto_url || null]
     );
     res.status(201).json({ id: rows[0].id });
   } catch (err) {
@@ -90,11 +91,13 @@ router.put('/productos/:id', async (req, res) => {
     const { rows: owned } = await db.query('SELECT id FROM productos WHERE id = $1 AND tienda_id = $2', [req.params.id, req.auth.id]);
     if (!owned[0]) return res.status(404).json({ error: 'Producto no encontrado' });
 
-    const { nombre, descripcion, categoria, precio, stock, foto_url, activo } = req.body;
+    const { nombre, marca, descripcion, categoria, subcategoria, precio, unidad, stock, foto_url, activo } = req.body;
     await db.query(
-      `UPDATE productos SET nombre=$1, descripcion=$2, categoria=$3, precio=$4, stock=$5, foto_url=$6, activo=$7
-       WHERE id=$8`,
-      [nombre, descripcion || null, categoria, precio, stock, foto_url || null, activo, req.params.id]
+      `UPDATE productos SET nombre=$1, marca=$2, descripcion=$3, categoria=$4, subcategoria=$5,
+        precio=$6, unidad=$7, stock=$8, foto_url=$9, activo=$10
+       WHERE id=$11`,
+      [nombre, marca || null, descripcion || null, categoria, subcategoria,
+        precio, unidad || 'unidad', stock, foto_url || null, activo, req.params.id]
     );
     res.json({ mensaje: 'Producto actualizado' });
   } catch (err) {

@@ -78,18 +78,27 @@ router.get('/tiendas/:id', async (req, res) => {
 });
 
 // ---------- PRODUCTOS ----------
+// Nota: el stock NUNCA se expone en las rutas publicas (solo lo ve la tienda
+// duena del producto, vía /api/tienda/productos).
+const CAMPOS_PRODUCTO_PUBLICO = `p.id, p.nombre, p.marca, p.descripcion, p.categoria, p.subcategoria,
+       p.precio, p.unidad, p.foto_url,
+       t.id as tienda_id, t.nombre as tienda_nombre, t.zona as tienda_zona, t.contacto_whatsapp as tienda_whatsapp`;
+
 router.get('/productos', async (req, res) => {
   try {
-    const { categoria, tienda_id, q } = req.query;
+    const { categoria, subcategoria, tienda_id, q } = req.query;
     const params = [];
-    let sql = `SELECT p.id, p.nombre, p.descripcion, p.categoria, p.precio, p.stock, p.foto_url,
-                      t.id as tienda_id, t.nombre as tienda_nombre, t.zona as tienda_zona
+    let sql = `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
                FROM productos p
                JOIN tiendas t ON t.id = p.tienda_id
                WHERE p.activo = true AND t.activo = true AND p.stock > 0`;
     if (categoria) {
       params.push(categoria);
       sql += ` AND p.categoria = $${params.length}`;
+    }
+    if (subcategoria) {
+      params.push(subcategoria);
+      sql += ` AND p.subcategoria = $${params.length}`;
     }
     if (tienda_id) {
       params.push(tienda_id);
@@ -105,6 +114,52 @@ router.get('/productos', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener productos' });
+  }
+});
+
+// ---------- DETALLE DE UN PRODUCTO + SIMILARES ----------
+router.get('/productos/:id', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
+       FROM productos p JOIN tiendas t ON t.id = p.tienda_id
+       WHERE p.id = $1 AND p.activo = true AND t.activo = true`,
+      [req.params.id]
+    );
+    const producto = rows[0];
+    if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
+
+    let similares = [];
+    if (producto.subcategoria) {
+      const { rows: relacionados } = await db.query(
+        `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
+         FROM productos p JOIN tiendas t ON t.id = p.tienda_id
+         WHERE p.activo = true AND t.activo = true AND p.stock > 0
+           AND p.subcategoria = $1 AND p.id != $2
+         ORDER BY p.created_at DESC LIMIT 8`,
+        [producto.subcategoria, producto.id]
+      );
+      similares = relacionados;
+    }
+    if (similares.length < 4) {
+      const { rows: mismaCategoria } = await db.query(
+        `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
+         FROM productos p JOIN tiendas t ON t.id = p.tienda_id
+         WHERE p.activo = true AND t.activo = true AND p.stock > 0
+           AND p.categoria = $1 AND p.id != $2
+         ORDER BY p.created_at DESC LIMIT 8`,
+        [producto.categoria, producto.id]
+      );
+      const idsExistentes = new Set(similares.map((s) => s.id));
+      for (const item of mismaCategoria) {
+        if (!idsExistentes.has(item.id) && similares.length < 8) similares.push(item);
+      }
+    }
+
+    res.json({ ...producto, similares });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener el producto' });
   }
 });
 
