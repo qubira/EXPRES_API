@@ -30,6 +30,45 @@ CREATE TABLE IF NOT EXISTS admin_users (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ---------- LISTAS CONFIGURABLES (tipo de negocio y zonas de entrega) ----------
+-- Se pueden ampliar desde el panel de tienda/admin con un boton "+" cuando
+-- la opcion que necesitan no esta en la lista.
+CREATE TABLE IF NOT EXISTS tipos_negocio (
+  id         SERIAL PRIMARY KEY,
+  clave      VARCHAR(60) UNIQUE NOT NULL,
+  etiqueta   VARCHAR(80) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO tipos_negocio (clave, etiqueta) VALUES
+  ('tienda', 'Tienda'), ('minimarket', 'Minimarket'), ('bazar', 'Bazar'),
+  ('ferreteria', 'Ferretería'), ('heladeria', 'Heladería'), ('restaurante', 'Restaurante'),
+  ('ambulante', 'Ambulante'), ('boutique', 'Boutique / Ropa'), ('artesanias', 'Artesanías'),
+  ('servicios_playa', 'Servicios de playa'), ('otro', 'Otro')
+ON CONFLICT (clave) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS zonas (
+  id         SERIAL PRIMARY KEY,
+  nombre     VARCHAR(100) UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO zonas (nombre) VALUES
+  ('Playa Ancón - Malecón Sur'), ('Playa Ancón - Malecón Norte'),
+  ('Playa Ancón - Zona Muelle'), ('Playa Ancón - Frente al mar')
+ON CONFLICT (nombre) DO NOTHING;
+
+-- ---------- AUDITORIA (control de conexiones: quien entro, desde que IP) ----------
+CREATE TABLE IF NOT EXISTS auditoria (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rol            VARCHAR(20) NOT NULL, -- admin | tienda | repartidor
+  referencia_id  UUID, -- id de la cuenta (null si el login fallo por credenciales invalidas)
+  nombre         VARCHAR(160), -- nombre o email usado en el intento
+  accion         VARCHAR(30) NOT NULL, -- login_ok | login_fallido
+  ip             VARCHAR(64),
+  user_agent     TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_auditoria_created_at ON auditoria(created_at DESC);
+
 -- ---------- TIENDAS / AMBULANTES SOCIOS ----------
 CREATE TABLE IF NOT EXISTS tiendas (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),

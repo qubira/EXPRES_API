@@ -4,6 +4,7 @@ const multer = require('multer');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
 const { subirImagen } = require('../utils/cloudinary');
+const { registrarLogin } = require('../utils/auditoria');
 
 const router = express.Router();
 
@@ -25,11 +26,13 @@ router.post('/login', async (req, res) => {
     const { rows } = await db.query('SELECT * FROM tiendas WHERE email = $1', [email]);
     const tienda = rows[0];
     if (!tienda || !(await bcrypt.compare(password || '', tienda.password_hash))) {
+      registrarLogin({ rol: 'tienda', nombre: email, req, exito: false });
       return res.status(401).json({ error: 'Credenciales invalidas' });
     }
     if (!tienda.activo) {
       return res.status(403).json({ error: 'Tu tienda aun no esta activada. Contacta al administrador.' });
     }
+    registrarLogin({ rol: 'tienda', referenciaId: tienda.id, nombre: tienda.nombre, req, exito: true });
     const token = firmarToken({ role: 'tienda', id: tienda.id, nombre: tienda.nombre });
     res.json({ token, nombre: tienda.nombre });
   } catch (err) {

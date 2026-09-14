@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
+const { registrarLogin } = require('../utils/auditoria');
 
 const router = express.Router();
 
@@ -12,8 +13,10 @@ router.post('/login', async (req, res) => {
     const { rows } = await db.query('SELECT * FROM admin_users WHERE email = $1', [email]);
     const admin = rows[0];
     if (!admin || !(await bcrypt.compare(password || '', admin.password_hash))) {
+      registrarLogin({ rol: 'admin', nombre: email, req, exito: false });
       return res.status(401).json({ error: 'Credenciales invalidas' });
     }
+    registrarLogin({ rol: 'admin', referenciaId: admin.id, nombre: admin.nombre, req, exito: true });
     const token = firmarToken({ role: 'admin', id: admin.id, nombre: admin.nombre });
     res.json({ token, nombre: admin.nombre });
   } catch (err) {
@@ -298,6 +301,20 @@ router.get('/productos', async (req, res) => {
     sql += ` WHERE p.tienda_id = $${params.length}`;
   }
   sql += ' ORDER BY p.created_at DESC';
+  const { rows } = await db.query(sql, params);
+  res.json(rows);
+});
+
+// ---------- AUDITORIA (conexiones del equipo: admin/tienda/repartidor) ----------
+router.get('/auditoria', async (req, res) => {
+  const { rol } = req.query;
+  const params = [];
+  let sql = 'SELECT id, rol, referencia_id, nombre, accion, ip, user_agent, created_at FROM auditoria';
+  if (rol) {
+    params.push(rol);
+    sql += ` WHERE rol = $${params.length}`;
+  }
+  sql += ' ORDER BY created_at DESC LIMIT 300';
   const { rows } = await db.query(sql, params);
   res.json(rows);
 });

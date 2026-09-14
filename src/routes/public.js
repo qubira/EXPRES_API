@@ -6,7 +6,7 @@ const db = require('../db');
 const { generarPin } = require('../utils/pin');
 const { subirImagen } = require('../utils/cloudinary');
 const { consultarDni } = require('../utils/decolecta');
-const { JWT_SECRET } = require('../middleware/auth');
+const { JWT_SECRET, requireAnyRole } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -44,12 +44,53 @@ router.get('/categorias', (req, res) => {
 });
 
 // ---------- TIPOS DE NEGOCIO (categoria de la tienda, distinto del producto) ----------
-const TIPOS_NEGOCIO = [
-  'tienda', 'minimarket', 'bazar', 'ferreteria', 'heladeria', 'restaurante',
-  'ambulante', 'boutique', 'artesanias', 'servicios_playa', 'otro',
-];
-router.get('/tipos-negocio', (req, res) => {
-  res.json(TIPOS_NEGOCIO);
+// Lista ampliable: admin y tiendas pueden agregar un tipo nuevo si no encuentran el suyo.
+function slugify(texto) {
+  return texto
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // quita tildes
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+router.get('/tipos-negocio', async (req, res) => {
+  const { rows } = await db.query('SELECT clave, etiqueta FROM tipos_negocio ORDER BY etiqueta');
+  res.json(rows);
+});
+
+router.post('/tipos-negocio', requireAnyRole(['admin', 'tienda']), async (req, res) => {
+  try {
+    const etiqueta = (req.body.etiqueta || '').trim();
+    if (!etiqueta) return res.status(400).json({ error: 'Escribe un nombre para el tipo de negocio' });
+    const clave = slugify(etiqueta);
+    if (!clave) return res.status(400).json({ error: 'Nombre invalido' });
+
+    await db.query('INSERT INTO tipos_negocio (clave, etiqueta) VALUES ($1,$2) ON CONFLICT (clave) DO NOTHING', [clave, etiqueta]);
+    const { rows } = await db.query('SELECT clave, etiqueta FROM tipos_negocio WHERE clave = $1', [clave]);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al agregar el tipo de negocio' });
+  }
+});
+
+// ---------- ZONAS DE ENTREGA (playas registradas) ----------
+router.get('/zonas', async (req, res) => {
+  const { rows } = await db.query('SELECT nombre FROM zonas ORDER BY nombre');
+  res.json(rows.map((r) => r.nombre));
+});
+
+router.post('/zonas', requireAnyRole(['admin', 'tienda']), async (req, res) => {
+  try {
+    const nombre = (req.body.nombre || '').trim();
+    if (!nombre) return res.status(400).json({ error: 'Escribe el nombre de la zona' });
+
+    await db.query('INSERT INTO zonas (nombre) VALUES ($1) ON CONFLICT (nombre) DO NOTHING', [nombre]);
+    res.status(201).json({ nombre });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al agregar la zona' });
+  }
 });
 
 // ---------- TIENDAS ----------
@@ -364,7 +405,8 @@ router.post('/tiendas/solicitud', async (req, res) => {
     if (!nombre || !categoria || !contacto_whatsapp || !zona || !dni_titular) {
       return res.status(400).json({ error: 'Nombre, categoria, zona, DNI del titular y WhatsApp son obligatorios' });
     }
-    if (!TIPOS_NEGOCIO.includes(categoria)) {
+    const { rows: tipoValido } = await db.query('SELECT 1 FROM tipos_negocio WHERE clave = $1', [categoria]);
+    if (!tipoValido[0]) {
       return res.status(400).json({ error: 'Tipo de negocio invalido' });
     }
     if (!/^\d{8}$/.test(dni_titular)) {

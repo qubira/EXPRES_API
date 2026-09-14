@@ -9,6 +9,7 @@ const repartidorRoutes = require('./routes/repartidor');
 const clienteRoutes = require('./routes/cliente');
 
 const app = express();
+app.set('trust proxy', true); // Render esta detras de un proxy; necesario para leer la IP real del cliente
 
 const allowedOrigins = (process.env.CORS_ORIGIN || '')
   .split(',')

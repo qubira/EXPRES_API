@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
+const { registrarLogin } = require('../utils/auditoria');
 
 const router = express.Router();
 
@@ -12,11 +13,13 @@ router.post('/login', async (req, res) => {
     const { rows } = await db.query('SELECT * FROM repartidores WHERE email = $1', [email]);
     const rep = rows[0];
     if (!rep || !(await bcrypt.compare(password || '', rep.password_hash))) {
+      registrarLogin({ rol: 'repartidor', nombre: email, req, exito: false });
       return res.status(401).json({ error: 'Credenciales invalidas' });
     }
     if (!rep.activo) {
       return res.status(403).json({ error: 'Tu cuenta esta inactiva. Contacta al administrador.' });
     }
+    registrarLogin({ rol: 'repartidor', referenciaId: rep.id, nombre: rep.nombre, req, exito: true });
     const token = firmarToken({ role: 'repartidor', id: rep.id, nombre: rep.nombre });
     res.json({ token, nombre: rep.nombre });
   } catch (err) {
