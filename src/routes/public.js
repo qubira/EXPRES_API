@@ -2,11 +2,13 @@ const express = require('express');
 const multer = require('multer');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { generarPin } = require('../utils/pin');
 const { subirImagen } = require('../utils/cloudinary');
 const { consultarDni } = require('../utils/decolecta');
-const { JWT_SECRET, requireAnyRole } = require('../middleware/auth');
+const { registrarLogin } = require('../utils/auditoria');
+const { JWT_SECRET, requireAnyRole, firmarToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -25,6 +27,53 @@ function clienteOpcional(req) {
     return null;
   }
 }
+
+// ---------- LOGIN UNIFICADO ----------
+// Un dueño de tienda o un repartidor no maneja una cuenta aparte para comprar:
+// entra por el mismo login del sitio normal con su mismo correo/contraseña.
+// Se prueba contra cliente, tienda y repartidor en ese orden; el primero que
+// coincide gana. El frontend usa el "rol" devuelto para saber si debe mostrar
+// el boton "Dashboard" y a que panel mandarlo.
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Correo y contraseña son obligatorios' });
+    }
+
+    const candidatos = [
+      { tabla: 'usuarios', rol: 'cliente' },
+      { tabla: 'tiendas', rol: 'tienda' },
+      { tabla: 'repartidores', rol: 'repartidor' },
+    ];
+
+    for (const { tabla, rol } of candidatos) {
+      const { rows } = await db.query(`SELECT * FROM ${tabla} WHERE email = $1`, [email]);
+      const cuenta = rows[0];
+      if (!cuenta || !cuenta.password_hash) continue;
+      if (!(await bcrypt.compare(password, cuenta.password_hash))) continue;
+
+      if ('activo' in cuenta && !cuenta.activo) {
+        return res.status(403).json({
+          error: rol === 'tienda'
+            ? 'Tu tienda aun no esta activada. Contacta al administrador.'
+            : 'Tu cuenta esta inactiva. Contacta al administrador.',
+        });
+      }
+
+      if (rol !== 'cliente') {
+        registrarLogin({ rol, referenciaId: cuenta.id, nombre: cuenta.nombre, req, exito: true });
+      }
+      const token = firmarToken({ role: rol, id: cuenta.id, nombre: cuenta.nombre });
+      return res.json({ token, nombre: cuenta.nombre, rol, zona: cuenta.zona || null });
+    }
+
+    res.status(401).json({ error: 'Correo o contraseña incorrectos' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
 
 const upload = multer({
   storage: multer.memoryStorage(),
