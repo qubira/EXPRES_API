@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { generarPin } = require('../utils/pin');
 const { subirImagen } = require('../utils/cloudinary');
+const { consultarDni } = require('../utils/decolecta');
 const { JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
@@ -359,7 +360,7 @@ router.get('/pedidos/:id', async (req, res) => {
 // ---------- REGISTRO DE TIENDAS SOCIAS (solicitud) ----------
 router.post('/tiendas/solicitud', async (req, res) => {
   try {
-    const { nombre, categoria, subcategoria, contacto_whatsapp, zona, descripcion, dni_titular } = req.body;
+    const { nombre, categoria, subcategoria, contacto_whatsapp, zona, descripcion, dni_titular, nombre_titular } = req.body;
     if (!nombre || !categoria || !contacto_whatsapp || !zona || !dni_titular) {
       return res.status(400).json({ error: 'Nombre, categoria, zona, DNI del titular y WhatsApp son obligatorios' });
     }
@@ -376,15 +377,33 @@ router.post('/tiendas/solicitud', async (req, res) => {
     const hash = await bcrypt.hash(passwordTemporal, 10);
 
     await db.query(
-      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, dni_titular, contacto_whatsapp, zona, email, password_hash, activo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,false)`,
-      [nombre, categoria, subcategoria || null, descripcion || null, dni_titular, contacto_whatsapp, zona, emailTemporal, hash]
+      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_whatsapp, zona, email, password_hash, activo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false)`,
+      [nombre, categoria, subcategoria || null, descripcion || null, dni_titular, nombre_titular || null, contacto_whatsapp, zona, emailTemporal, hash]
     );
 
     res.status(201).json({ mensaje: 'Solicitud recibida. Te contactaremos por WhatsApp para activar tu tienda.' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al registrar la solicitud' });
+  }
+});
+
+// ---------- CONSULTA DNI (RENIEC via Decolecta) - autocompletar nombre del titular ----------
+router.get('/consulta-dni/:numero', async (req, res) => {
+  try {
+    const { numero } = req.params;
+    if (!/^\d{8}$/.test(numero)) {
+      return res.status(400).json({ error: 'El DNI debe tener 8 dígitos' });
+    }
+    const resultado = await consultarDni(numero);
+    if (!resultado) return res.status(404).json({ error: 'DNI no encontrado' });
+    res.json(resultado);
+  } catch (err) {
+    console.error(err);
+    res.status(err.status === 429 ? 429 : 502).json({
+      error: err.status === 429 ? 'Se alcanzó el límite de consultas de DNI. Ingresa el nombre manualmente.' : 'No se pudo consultar el DNI, ingresa el nombre manualmente',
+    });
   }
 });
 

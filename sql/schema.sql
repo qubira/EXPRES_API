@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS tiendas (
   descripcion        TEXT,
   logo_url           TEXT,
   dni_titular        VARCHAR(20), -- DNI del titular/responsable del negocio
+  nombre_titular     VARCHAR(150), -- nombre completo del titular (autocompletado via RENIEC)
   contacto_telefono  VARCHAR(20),
   contacto_whatsapp  VARCHAR(20),
   zona               VARCHAR(80), -- ej: "Playa Ancon - Malecon"
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS tiendas (
 );
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(100);
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS dni_titular VARCHAR(20);
+ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS nombre_titular VARCHAR(150);
 CREATE INDEX IF NOT EXISTS idx_tiendas_categoria ON tiendas(categoria);
 CREATE INDEX IF NOT EXISTS idx_tiendas_activo ON tiendas(activo);
 
