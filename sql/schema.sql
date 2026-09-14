@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
 CREATE TABLE IF NOT EXISTS tiendas (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre             VARCHAR(120) NOT NULL,
-  categoria          VARCHAR(40)  NOT NULL, -- ropa, comida, bebidas, servicios, artesanias, otros
+  categoria          VARCHAR(40)  NOT NULL, -- tipo de negocio: tienda, ferreteria, heladeria, bazar, minimarket, etc
+  subcategoria       VARCHAR(100), -- que vende: ropa, helados, libros, bikinis, etc (texto libre)
   descripcion        TEXT,
   logo_url           TEXT,
   contacto_telefono  VARCHAR(20),
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS tiendas (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(100);
 CREATE INDEX IF NOT EXISTS idx_tiendas_categoria ON tiendas(categoria);
 CREATE INDEX IF NOT EXISTS idx_tiendas_activo ON tiendas(activo);
 

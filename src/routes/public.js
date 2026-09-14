@@ -36,10 +36,19 @@ const upload = multer({
   },
 });
 
-// ---------- CATEGORIAS ----------
+// ---------- CATEGORIAS DE PRODUCTOS (catalogo publico) ----------
 const CATEGORIAS = ['ropa', 'comida', 'bebidas', 'servicios', 'artesanias', 'otros'];
 router.get('/categorias', (req, res) => {
   res.json(CATEGORIAS);
+});
+
+// ---------- TIPOS DE NEGOCIO (categoria de la tienda, distinto del producto) ----------
+const TIPOS_NEGOCIO = [
+  'tienda', 'minimarket', 'bazar', 'ferreteria', 'heladeria', 'restaurante',
+  'ambulante', 'boutique', 'artesanias', 'servicios_playa', 'otro',
+];
+router.get('/tipos-negocio', (req, res) => {
+  res.json(TIPOS_NEGOCIO);
 });
 
 // ---------- TIENDAS ----------
@@ -350,12 +359,12 @@ router.get('/pedidos/:id', async (req, res) => {
 // ---------- REGISTRO DE TIENDAS SOCIAS (solicitud) ----------
 router.post('/tiendas/solicitud', async (req, res) => {
   try {
-    const { nombre, categoria, contacto_whatsapp, zona, descripcion } = req.body;
+    const { nombre, categoria, subcategoria, contacto_whatsapp, zona, descripcion } = req.body;
     if (!nombre || !categoria || !contacto_whatsapp) {
       return res.status(400).json({ error: 'Nombre, categoria y WhatsApp son obligatorios' });
     }
-    if (!CATEGORIAS.includes(categoria)) {
-      return res.status(400).json({ error: 'Categoria invalida' });
+    if (!TIPOS_NEGOCIO.includes(categoria)) {
+      return res.status(400).json({ error: 'Tipo de negocio invalido' });
     }
     // Se guarda inactiva; el admin la activa tras contactar al vendedor y fijar password/comision
     const emailTemporal = `solicitud+${crypto.randomUUID()}@express-ancon.local`;
@@ -364,9 +373,9 @@ router.post('/tiendas/solicitud', async (req, res) => {
     const hash = await bcrypt.hash(passwordTemporal, 10);
 
     await db.query(
-      `INSERT INTO tiendas (nombre, categoria, descripcion, contacto_whatsapp, zona, email, password_hash, activo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,false)`,
-      [nombre, categoria, descripcion || null, contacto_whatsapp, zona || null, emailTemporal, hash]
+      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, contacto_whatsapp, zona, email, password_hash, activo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,false)`,
+      [nombre, categoria, subcategoria || null, descripcion || null, contacto_whatsapp, zona || null, emailTemporal, hash]
     );
 
     res.status(201).json({ mensaje: 'Solicitud recibida. Te contactaremos por WhatsApp para activar tu tienda.' });
