@@ -164,8 +164,14 @@ router.get('/productos/:id', async (req, res) => {
 });
 
 // ---------- CREAR PEDIDO (checkout) ----------
+// Requiere sesion de cliente: no se aceptan pedidos como invitado.
 // body: { cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega, items: [{producto_id, cantidad}] }
 router.post('/pedidos', async (req, res) => {
+  const cliente = clienteOpcional(req);
+  if (!cliente) {
+    return res.status(401).json({ error: 'Debes iniciar sesión para completar tu compra' });
+  }
+
   const client = await db.pool.connect();
   try {
     const { cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega, items } = req.body;
@@ -227,7 +233,6 @@ router.post('/pedidos', async (req, res) => {
     const deliveryFee = DELIVERY_FEE_DEFAULT;
     const montoTotal = montoProductos + deliveryFee;
     const pin = generarPin();
-    const cliente = clienteOpcional(req);
 
     const { rows: pedidoRows } = await client.query(
       `INSERT INTO pedidos
@@ -235,7 +240,7 @@ router.post('/pedidos', async (req, res) => {
          estado, monto_productos, delivery_fee, comision_total, monto_total, pin_entrega)
        VALUES ($1,$2,$3,$4,$5,'pendiente_pago',$6,$7,$8,$9,$10)
        RETURNING id, estado, monto_productos, delivery_fee, monto_total, created_at`,
-      [cliente ? cliente.id : null, cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega || null,
+      [cliente.id, cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega || null,
         montoProductos, deliveryFee, comisionTotal, montoTotal, pin]
     );
     const pedido = pedidoRows[0];
