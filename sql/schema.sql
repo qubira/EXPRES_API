@@ -8,12 +8,16 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS usuarios (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre        VARCHAR(120) NOT NULL,
+  email         VARCHAR(160),
   telefono      VARCHAR(20)  NOT NULL,
   password_hash VARCHAR(255),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_telefono_unico ON usuarios(telefono);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(160);
+DROP INDEX IF EXISTS idx_usuarios_telefono_unico;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_unico ON usuarios(email);
+CREATE INDEX IF NOT EXISTS idx_usuarios_telefono ON usuarios(telefono);
 
 -- ---------- ADMIN (dueño de la plataforma) ----------
 CREATE TABLE IF NOT EXISTS admin_users (

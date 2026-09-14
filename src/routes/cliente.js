@@ -8,30 +8,33 @@ const router = express.Router();
 // ---------- REGISTRO ----------
 router.post('/registro', async (req, res) => {
   try {
-    const { nombre, telefono, password } = req.body;
-    if (!nombre || !telefono || !password) {
-      return res.status(400).json({ error: 'Nombre, teléfono y contraseña son obligatorios' });
+    const { nombre, email, telefono, password } = req.body;
+    if (!nombre || !email || !telefono || !password) {
+      return res.status(400).json({ error: 'Nombre, correo, teléfono y contraseña son obligatorios' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Ingresa un correo electrónico válido' });
     }
     if (password.length < 6) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
     }
 
-    const { rows: existente } = await db.query('SELECT id FROM usuarios WHERE telefono = $1', [telefono]);
+    const { rows: existente } = await db.query('SELECT id FROM usuarios WHERE email = $1', [email]);
     if (existente[0]) {
-      return res.status(400).json({ error: 'Ya existe una cuenta con ese número de celular' });
+      return res.status(400).json({ error: 'Ya existe una cuenta con ese correo electrónico' });
     }
 
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
-      `INSERT INTO usuarios (nombre, telefono, password_hash) VALUES ($1,$2,$3) RETURNING id, nombre`,
-      [nombre, telefono, hash]
+      `INSERT INTO usuarios (nombre, email, telefono, password_hash) VALUES ($1,$2,$3,$4) RETURNING id, nombre`,
+      [nombre, email, telefono, hash]
     );
     const usuario = rows[0];
     const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre });
     res.status(201).json({ token, nombre: usuario.nombre });
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(400).json({ error: 'Ya existe una cuenta con ese número de celular' });
+      return res.status(400).json({ error: 'Ya existe una cuenta con ese correo electrónico' });
     }
     console.error(err);
     res.status(500).json({ error: 'Error al crear la cuenta' });
@@ -41,11 +44,11 @@ router.post('/registro', async (req, res) => {
 // ---------- LOGIN ----------
 router.post('/login', async (req, res) => {
   try {
-    const { telefono, password } = req.body;
-    const { rows } = await db.query('SELECT * FROM usuarios WHERE telefono = $1', [telefono]);
+    const { email, password } = req.body;
+    const { rows } = await db.query('SELECT * FROM usuarios WHERE email = $1', [email]);
     const usuario = rows[0];
     if (!usuario || !usuario.password_hash || !(await bcrypt.compare(password || '', usuario.password_hash))) {
-      return res.status(401).json({ error: 'Teléfono o contraseña incorrectos' });
+      return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
     }
     const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre });
     res.json({ token, nombre: usuario.nombre });
@@ -59,7 +62,7 @@ router.use(requireRole('cliente'));
 
 // ---------- MI PERFIL ----------
 router.get('/perfil', async (req, res) => {
-  const { rows } = await db.query('SELECT id, nombre, telefono FROM usuarios WHERE id = $1', [req.auth.id]);
+  const { rows } = await db.query('SELECT id, nombre, email, telefono FROM usuarios WHERE id = $1', [req.auth.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
   res.json(rows[0]);
 });
