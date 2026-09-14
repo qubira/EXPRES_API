@@ -51,7 +51,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
     }
     const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre });
-    res.json({ token, nombre: usuario.nombre });
+    res.json({ token, nombre: usuario.nombre, zona: usuario.zona });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al iniciar sesión' });
@@ -62,9 +62,27 @@ router.use(requireRole('cliente'));
 
 // ---------- MI PERFIL ----------
 router.get('/perfil', async (req, res) => {
-  const { rows } = await db.query('SELECT id, nombre, email, telefono FROM usuarios WHERE id = $1', [req.auth.id]);
+  const { rows } = await db.query('SELECT id, nombre, email, telefono, zona FROM usuarios WHERE id = $1', [req.auth.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
   res.json(rows[0]);
+});
+
+// ---------- ACTUALIZAR ZONA (ubicacion dentro de la playa) ----------
+router.post('/zona', async (req, res) => {
+  try {
+    const { zona } = req.body;
+    if (!zona || !zona.trim()) {
+      return res.status(400).json({ error: 'Ingresa tu zona' });
+    }
+    const { rows } = await db.query(
+      'UPDATE usuarios SET zona = $1 WHERE id = $2 RETURNING zona',
+      [zona.trim(), req.auth.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al guardar tu zona' });
+  }
 });
 
 // ---------- ACTUALIZAR DATOS ----------

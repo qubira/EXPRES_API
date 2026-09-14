@@ -11,10 +11,12 @@ CREATE TABLE IF NOT EXISTS usuarios (
   email         VARCHAR(160),
   telefono      VARCHAR(20)  NOT NULL,
   password_hash VARCHAR(255),
+  zona          VARCHAR(160),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(160);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS zona VARCHAR(160);
 DROP INDEX IF EXISTS idx_usuarios_telefono_unico;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_unico ON usuarios(email);
 CREATE INDEX IF NOT EXISTS idx_usuarios_telefono ON usuarios(telefono);
