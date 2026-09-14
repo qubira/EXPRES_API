@@ -359,12 +359,15 @@ router.get('/pedidos/:id', async (req, res) => {
 // ---------- REGISTRO DE TIENDAS SOCIAS (solicitud) ----------
 router.post('/tiendas/solicitud', async (req, res) => {
   try {
-    const { nombre, categoria, subcategoria, contacto_whatsapp, zona, descripcion } = req.body;
-    if (!nombre || !categoria || !contacto_whatsapp) {
-      return res.status(400).json({ error: 'Nombre, categoria y WhatsApp son obligatorios' });
+    const { nombre, categoria, subcategoria, contacto_whatsapp, zona, descripcion, dni_titular } = req.body;
+    if (!nombre || !categoria || !contacto_whatsapp || !zona || !dni_titular) {
+      return res.status(400).json({ error: 'Nombre, categoria, zona, DNI del titular y WhatsApp son obligatorios' });
     }
     if (!TIPOS_NEGOCIO.includes(categoria)) {
       return res.status(400).json({ error: 'Tipo de negocio invalido' });
+    }
+    if (!/^\d{8}$/.test(dni_titular)) {
+      return res.status(400).json({ error: 'El DNI debe tener 8 dígitos' });
     }
     // Se guarda inactiva; el admin la activa tras contactar al vendedor y fijar password/comision
     const emailTemporal = `solicitud+${crypto.randomUUID()}@express-ancon.local`;
@@ -373,9 +376,9 @@ router.post('/tiendas/solicitud', async (req, res) => {
     const hash = await bcrypt.hash(passwordTemporal, 10);
 
     await db.query(
-      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, contacto_whatsapp, zona, email, password_hash, activo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,false)`,
-      [nombre, categoria, subcategoria || null, descripcion || null, contacto_whatsapp, zona || null, emailTemporal, hash]
+      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, dni_titular, contacto_whatsapp, zona, email, password_hash, activo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,false)`,
+      [nombre, categoria, subcategoria || null, descripcion || null, dni_titular, contacto_whatsapp, zona, emailTemporal, hash]
     );
 
     res.status(201).json({ mensaje: 'Solicitud recibida. Te contactaremos por WhatsApp para activar tu tienda.' });

@@ -43,7 +43,7 @@ router.use(requireRole('tienda'));
 // ---------- MI PERFIL ----------
 router.get('/perfil', async (req, res) => {
   const { rows } = await db.query(
-    `SELECT id, nombre, categoria, subcategoria, descripcion, zona, comision_pactada, contacto_telefono,
+    `SELECT id, nombre, categoria, subcategoria, descripcion, zona, dni_titular, comision_pactada, contacto_telefono,
             contacto_whatsapp, logo_url, email
      FROM tiendas WHERE id = $1`,
     [req.auth.id]
@@ -55,17 +55,20 @@ router.get('/perfil', async (req, res) => {
 // La comision, el email y la activacion los controla el administrador, no la tienda.
 router.put('/perfil', async (req, res) => {
   try {
-    const { nombre, categoria, subcategoria, descripcion, zona, contacto_telefono, contacto_whatsapp, logo_url } = req.body;
-    if (!nombre || !categoria) {
-      return res.status(400).json({ error: 'Nombre y categoría son obligatorios' });
+    const { nombre, categoria, subcategoria, descripcion, zona, dni_titular, contacto_telefono, contacto_whatsapp, logo_url } = req.body;
+    if (!nombre || !categoria || !zona) {
+      return res.status(400).json({ error: 'Nombre, categoría y zona son obligatorios' });
+    }
+    if (dni_titular && !/^\d{8}$/.test(dni_titular)) {
+      return res.status(400).json({ error: 'El DNI debe tener 8 dígitos' });
     }
     const { rows } = await db.query(
       `UPDATE tiendas SET nombre=$1, categoria=$2, subcategoria=$3, descripcion=$4, zona=$5,
-        contacto_telefono=$6, contacto_whatsapp=$7, logo_url=$8
-       WHERE id=$9
-       RETURNING id, nombre, categoria, subcategoria, descripcion, zona, contacto_telefono, contacto_whatsapp, logo_url`,
-      [nombre, categoria, subcategoria || null, descripcion || null, zona || null, contacto_telefono || null,
-        contacto_whatsapp || null, logo_url || null, req.auth.id]
+        dni_titular=$6, contacto_telefono=$7, contacto_whatsapp=$8, logo_url=$9
+       WHERE id=$10
+       RETURNING id, nombre, categoria, subcategoria, descripcion, zona, dni_titular, contacto_telefono, contacto_whatsapp, logo_url`,
+      [nombre, categoria, subcategoria || null, descripcion || null, zona, dni_titular || null,
+        contacto_telefono || null, contacto_whatsapp || null, logo_url || null, req.auth.id]
     );
     res.json(rows[0]);
   } catch (err) {

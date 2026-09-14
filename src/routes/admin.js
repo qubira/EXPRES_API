@@ -180,21 +180,24 @@ router.post('/pedidos/:id/asignar', async (req, res) => {
 
 // ---------- TIENDAS (CRUD) ----------
 router.get('/tiendas', async (req, res) => {
-  const { rows } = await db.query('SELECT id, nombre, categoria, subcategoria, zona, comision_pactada, activo, email, contacto_whatsapp, created_at FROM tiendas ORDER BY created_at DESC');
+  const { rows } = await db.query('SELECT id, nombre, categoria, subcategoria, zona, dni_titular, comision_pactada, activo, email, contacto_whatsapp, created_at FROM tiendas ORDER BY created_at DESC');
   res.json(rows);
 });
 
 router.post('/tiendas', async (req, res) => {
   try {
-    const { nombre, categoria, subcategoria, descripcion, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password } = req.body;
+    const { nombre, categoria, subcategoria, descripcion, dni_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password } = req.body;
     if (!nombre || !categoria || !email || !password) {
       return res.status(400).json({ error: 'Nombre, categoria, email y password son obligatorios' });
     }
+    if (dni_titular && !/^\d{8}$/.test(dni_titular)) {
+      return res.status(400).json({ error: 'El DNI debe tener 8 dígitos' });
+    }
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
-      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password_hash, activo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) RETURNING id`,
-      [nombre, categoria, subcategoria || null, descripcion || null, contacto_telefono || null, contacto_whatsapp || null,
+      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, dni_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password_hash, activo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) RETURNING id`,
+      [nombre, categoria, subcategoria || null, descripcion || null, dni_titular || null, contacto_telefono || null, contacto_whatsapp || null,
         zona || null, comision_pactada || 12.0, email, hash]
     );
     res.status(201).json({ id: rows[0].id });
@@ -206,11 +209,14 @@ router.post('/tiendas', async (req, res) => {
 
 router.put('/tiendas/:id', async (req, res) => {
   try {
-    const { nombre, categoria, subcategoria, descripcion, contacto_telefono, contacto_whatsapp, zona, comision_pactada, activo } = req.body;
+    const { nombre, categoria, subcategoria, descripcion, dni_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, activo } = req.body;
+    if (dni_titular && !/^\d{8}$/.test(dni_titular)) {
+      return res.status(400).json({ error: 'El DNI debe tener 8 dígitos' });
+    }
     await db.query(
-      `UPDATE tiendas SET nombre=$1, categoria=$2, subcategoria=$3, descripcion=$4, contacto_telefono=$5,
-        contacto_whatsapp=$6, zona=$7, comision_pactada=$8, activo=$9 WHERE id=$10`,
-      [nombre, categoria, subcategoria || null, descripcion || null, contacto_telefono || null, contacto_whatsapp || null,
+      `UPDATE tiendas SET nombre=$1, categoria=$2, subcategoria=$3, descripcion=$4, dni_titular=$5, contacto_telefono=$6,
+        contacto_whatsapp=$7, zona=$8, comision_pactada=$9, activo=$10 WHERE id=$11`,
+      [nombre, categoria, subcategoria || null, descripcion || null, dni_titular || null, contacto_telefono || null, contacto_whatsapp || null,
         zona || null, comision_pactada, activo, req.params.id]
     );
     res.json({ mensaje: 'Tienda actualizada' });

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS tiendas (
   subcategoria       VARCHAR(100), -- que vende: ropa, helados, libros, bikinis, etc (texto libre)
   descripcion        TEXT,
   logo_url           TEXT,
+  dni_titular        VARCHAR(20), -- DNI del titular/responsable del negocio
   contacto_telefono  VARCHAR(20),
   contacto_whatsapp  VARCHAR(20),
   zona               VARCHAR(80), -- ej: "Playa Ancon - Malecon"
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS tiendas (
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(100);
+ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS dni_titular VARCHAR(20);
 CREATE INDEX IF NOT EXISTS idx_tiendas_categoria ON tiendas(categoria);
 CREATE INDEX IF NOT EXISTS idx_tiendas_activo ON tiendas(activo);
 
