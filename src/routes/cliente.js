@@ -118,6 +118,34 @@ router.post('/perfil/password', async (req, res) => {
   }
 });
 
+// ---------- ELIMINAR CUENTA ----------
+router.delete('/perfil', async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { password } = req.body;
+    const { rows } = await db.query('SELECT password_hash FROM usuarios WHERE id = $1', [req.auth.id]);
+    const usuario = rows[0];
+    if (!usuario || !(await bcrypt.compare(password || '', usuario.password_hash))) {
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    }
+
+    await client.query('BEGIN');
+    // Los pedidos ya realizados se conservan como historial del negocio,
+    // solo se desvinculan de la cuenta que se elimina.
+    await client.query('UPDATE pedidos SET usuario_id = NULL WHERE usuario_id = $1', [req.auth.id]);
+    await client.query('DELETE FROM usuarios WHERE id = $1', [req.auth.id]);
+    await client.query('COMMIT');
+
+    res.json({ mensaje: 'Cuenta eliminada' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Error al eliminar la cuenta' });
+  } finally {
+    client.release();
+  }
+});
+
 // ---------- MIS PEDIDOS ----------
 router.get('/pedidos', async (req, res) => {
   try {
