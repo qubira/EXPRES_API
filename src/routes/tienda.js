@@ -43,10 +43,61 @@ router.use(requireRole('tienda'));
 // ---------- MI PERFIL ----------
 router.get('/perfil', async (req, res) => {
   const { rows } = await db.query(
-    'SELECT id, nombre, categoria, descripcion, zona, comision_pactada, contacto_whatsapp FROM tiendas WHERE id = $1',
+    `SELECT id, nombre, categoria, descripcion, zona, comision_pactada, contacto_telefono,
+            contacto_whatsapp, logo_url, email
+     FROM tiendas WHERE id = $1`,
     [req.auth.id]
   );
   res.json(rows[0]);
+});
+
+// ---------- ACTUALIZAR PERFIL ----------
+// La comision, el email y la activacion los controla el administrador, no la tienda.
+router.put('/perfil', async (req, res) => {
+  try {
+    const { nombre, categoria, descripcion, zona, contacto_telefono, contacto_whatsapp, logo_url } = req.body;
+    if (!nombre || !categoria) {
+      return res.status(400).json({ error: 'Nombre y categoría son obligatorios' });
+    }
+    const { rows } = await db.query(
+      `UPDATE tiendas SET nombre=$1, categoria=$2, descripcion=$3, zona=$4,
+        contacto_telefono=$5, contacto_whatsapp=$6, logo_url=$7
+       WHERE id=$8
+       RETURNING id, nombre, categoria, descripcion, zona, contacto_telefono, contacto_whatsapp, logo_url`,
+      [nombre, categoria, descripcion || null, zona || null, contacto_telefono || null,
+        contacto_whatsapp || null, logo_url || null, req.auth.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar el perfil' });
+  }
+});
+
+// ---------- CAMBIAR CONTRASEÑA ----------
+router.post('/perfil/password', async (req, res) => {
+  try {
+    const { password_actual, password_nueva } = req.body;
+    if (!password_actual || !password_nueva) {
+      return res.status(400).json({ error: 'Ingresa tu contraseña actual y la nueva' });
+    }
+    if (password_nueva.length < 6) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const { rows } = await db.query('SELECT password_hash FROM tiendas WHERE id = $1', [req.auth.id]);
+    const tienda = rows[0];
+    if (!tienda || !(await bcrypt.compare(password_actual, tienda.password_hash))) {
+      return res.status(401).json({ error: 'La contraseña actual no es correcta' });
+    }
+
+    const hash = await bcrypt.hash(password_nueva, 10);
+    await db.query('UPDATE tiendas SET password_hash = $1 WHERE id = $2', [hash, req.auth.id]);
+    res.json({ mensaje: 'Contraseña actualizada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al cambiar la contraseña' });
+  }
 });
 
 // ---------- SUBIR FOTO DE PRODUCTO ----------
