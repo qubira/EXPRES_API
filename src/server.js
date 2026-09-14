@@ -6,6 +6,7 @@ const publicRoutes = require('./routes/public');
 const adminRoutes = require('./routes/admin');
 const tiendaRoutes = require('./routes/tienda');
 const repartidorRoutes = require('./routes/repartidor');
+const clienteRoutes = require('./routes/cliente');
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use('/api', publicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tienda', tiendaRoutes);
 app.use('/api/repartidor', repartidorRoutes);
+app.use('/api/cliente', clienteRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Recurso no encontrado' });

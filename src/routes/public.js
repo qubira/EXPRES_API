@@ -1,13 +1,29 @@
 const express = require('express');
 const multer = require('multer');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { generarPin } = require('../utils/pin');
 const { subirImagen } = require('../utils/cloudinary');
+const { JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
 
 const DELIVERY_FEE_DEFAULT = Number(process.env.DELIVERY_FEE_DEFAULT || 5.0);
+
+// El checkout es publico (permite invitados), pero si el cliente envia un
+// token valido de cuenta, el pedido queda vinculado a su historial.
+function clienteOpcional(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    return payload.role === 'cliente' ? payload : null;
+  } catch (err) {
+    return null;
+  }
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -156,14 +172,15 @@ router.post('/pedidos', async (req, res) => {
     const deliveryFee = DELIVERY_FEE_DEFAULT;
     const montoTotal = montoProductos + deliveryFee;
     const pin = generarPin();
+    const cliente = clienteOpcional(req);
 
     const { rows: pedidoRows } = await client.query(
       `INSERT INTO pedidos
-        (cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega,
+        (usuario_id, cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega,
          estado, monto_productos, delivery_fee, comision_total, monto_total, pin_entrega)
-       VALUES ($1,$2,$3,$4,'pendiente_pago',$5,$6,$7,$8,$9)
+       VALUES ($1,$2,$3,$4,$5,'pendiente_pago',$6,$7,$8,$9,$10)
        RETURNING id, estado, monto_productos, delivery_fee, monto_total, created_at`,
-      [cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega || null,
+      [cliente ? cliente.id : null, cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega || null,
         montoProductos, deliveryFee, comisionTotal, montoTotal, pin]
     );
     const pedido = pedidoRows[0];

@@ -4,14 +4,16 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- ---------- USUARIOS (clientes, checkout como invitado) ----------
+-- ---------- USUARIOS (clientes; login opcional para ver su historial) ----------
 CREATE TABLE IF NOT EXISTS usuarios (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre        VARCHAR(120) NOT NULL,
   telefono      VARCHAR(20)  NOT NULL,
+  password_hash VARCHAR(255),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_usuarios_telefono ON usuarios(telefono);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_telefono_unico ON usuarios(telefono);
 
 -- ---------- ADMIN (dueño de la plataforma) ----------
 CREATE TABLE IF NOT EXISTS admin_users (
