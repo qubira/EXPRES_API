@@ -181,7 +181,7 @@ router.get('/tiendas/:id', async (req, res) => {
 // Nota: el stock NUNCA se expone en las rutas publicas (solo lo ve la tienda
 // duena del producto, vía /api/tienda/productos).
 const CAMPOS_PRODUCTO_PUBLICO = `p.id, p.nombre, p.marca, p.descripcion, p.categoria, p.subcategoria,
-       p.precio, p.unidad, p.foto_url,
+       p.precio, p.unidad, p.contenido, p.foto_url,
        t.id as tienda_id, t.nombre as tienda_nombre, t.zona as tienda_zona, t.contacto_whatsapp as tienda_whatsapp`;
 
 router.get('/productos', async (req, res) => {

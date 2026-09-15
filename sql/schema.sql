@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS productos (
   subcategoria VARCHAR(80),
   precio       NUMERIC(10,2) NOT NULL CHECK (precio >= 0),
   unidad       VARCHAR(20) NOT NULL DEFAULT 'unidad',
+  contenido    NUMERIC(10,2), -- cantidad numerica de la unidad, ej: 500 (g), 1.5 (L), 6 (unidades por paquete)
   stock        INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
   foto_url     TEXT,
   activo       BOOLEAN NOT NULL DEFAULT true,
@@ -115,6 +116,7 @@ CREATE TABLE IF NOT EXISTS productos (
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS marca VARCHAR(100);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(80);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS unidad VARCHAR(20) NOT NULL DEFAULT 'unidad';
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS contenido NUMERIC(10,2);
 CREATE INDEX IF NOT EXISTS idx_productos_tienda ON productos(tienda_id);
 CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos(categoria);
 CREATE INDEX IF NOT EXISTS idx_productos_subcategoria ON productos(subcategoria);
