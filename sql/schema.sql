@@ -12,14 +12,36 @@ CREATE TABLE IF NOT EXISTS usuarios (
   telefono      VARCHAR(20)  NOT NULL,
   password_hash VARCHAR(255),
   zona          VARCHAR(160),
+  estado_cuenta VARCHAR(20) NOT NULL DEFAULT 'activo', -- activo | suspendido | bloqueado
+  suspendido_hasta TIMESTAMPTZ,
+  estado_cuenta_motivo TEXT,
+  estado_cuenta_actualizado_at TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email VARCHAR(160);
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS zona VARCHAR(160);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_cuenta VARCHAR(20) NOT NULL DEFAULT 'activo';
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS suspendido_hasta TIMESTAMPTZ;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_cuenta_motivo TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_cuenta_actualizado_at TIMESTAMPTZ;
 DROP INDEX IF EXISTS idx_usuarios_telefono_unico;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_unico ON usuarios(email);
 CREATE INDEX IF NOT EXISTS idx_usuarios_telefono ON usuarios(telefono);
+
+-- ---------- INCIDENTES DE CLIENTE (faltas de respeto, acoso, etc.) ----------
+-- Nunca se elimina una cuenta de usuario: queda el historico completo para
+-- respaldo ante reclamos o temas legales. Suspender/bloquear son reversibles.
+CREATE TABLE IF NOT EXISTS incidentes_cliente (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  usuario_id          UUID NOT NULL REFERENCES usuarios(id),
+  tipo                VARCHAR(30) NOT NULL, -- falta_respeto | acoso | otro
+  descripcion         TEXT,
+  reportado_por_rol   VARCHAR(20), -- admin | tienda | repartidor
+  reportado_por_nombre VARCHAR(120),
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_incidentes_cliente_usuario ON incidentes_cliente(usuario_id);
 
 -- ---------- ADMIN (dueño de la plataforma) ----------
 CREATE TABLE IF NOT EXISTS admin_users (

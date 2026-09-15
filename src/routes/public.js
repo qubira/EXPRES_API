@@ -10,6 +10,7 @@ const { consultarDni } = require('../utils/decolecta');
 const { consultarCe } = require('../utils/jsonpe');
 const { registrarLogin } = require('../utils/auditoria');
 const { crearSesion } = require('../utils/sesiones');
+const { verificarEstadoCuenta } = require('../utils/moderacionCliente');
 const { JWT_SECRET, requireAnyRole, firmarToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -61,6 +62,10 @@ router.post('/login', async (req, res) => {
             ? 'Tu tienda aun no esta activada. Contacta al administrador.'
             : 'Tu cuenta esta inactiva. Contacta al administrador.',
         });
+      }
+      if (rol === 'cliente') {
+        const errorEstado = await verificarEstadoCuenta(cuenta);
+        if (errorEstado) return res.status(403).json({ error: errorEstado });
       }
 
       if (rol !== 'cliente') {

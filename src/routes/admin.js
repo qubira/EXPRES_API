@@ -315,6 +315,25 @@ router.get('/repartidores', async (req, res) => {
   res.json(rows);
 });
 
+// ---------- HISTORIAL DE PEDIDOS DE UN REPARTIDOR ----------
+router.get('/repartidores/:id/pedidos', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, cliente_nombre, zona_entrega, estado, pin_entrega, entrega_observada, pago_retenido,
+              monto_productos, delivery_fee, monto_total, created_at, asignado_at, recogido_at, entregado_at
+       FROM pedidos
+       WHERE repartidor_id = $1
+       ORDER BY created_at DESC
+       LIMIT 200`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener el historial del repartidor' });
+  }
+});
+
 router.post('/repartidores', async (req, res) => {
   try {
     const {
@@ -392,10 +411,14 @@ router.get('/usuarios', async (req, res) => {
   try {
     const { rows } = await db.query(`
       SELECT u.id, u.nombre, u.email, u.telefono, u.zona, u.created_at,
-             COUNT(p.id)::int as total_pedidos,
-             COALESCE(SUM(p.monto_total) FILTER (WHERE p.estado = 'entregado'), 0) as total_gastado
+             u.estado_cuenta, u.suspendido_hasta, u.estado_cuenta_motivo,
+             COUNT(DISTINCT p.id)::int as total_pedidos,
+             COUNT(DISTINCT p.id) FILTER (WHERE p.estado = 'entregado')::int as compras_efectivas,
+             COALESCE(SUM(p.monto_total) FILTER (WHERE p.estado = 'entregado'), 0) as total_gastado,
+             COUNT(DISTINCT ic.id)::int as incidentes
       FROM usuarios u
       LEFT JOIN pedidos p ON p.usuario_id = u.id
+      LEFT JOIN incidentes_cliente ic ON ic.usuario_id = u.id
       GROUP BY u.id
       ORDER BY u.created_at DESC
     `);
@@ -403,6 +426,102 @@ router.get('/usuarios', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener las cuentas de usuario' });
+  }
+});
+
+// ---------- INCIDENTES DE CLIENTE ----------
+const TIPOS_INCIDENTE = ['falta_respeto', 'acoso', 'otro'];
+
+router.get('/usuarios/:id/incidentes', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT * FROM incidentes_cliente WHERE usuario_id = $1 ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener los incidentes' });
+  }
+});
+
+router.post('/usuarios/:id/incidentes', async (req, res) => {
+  try {
+    const { tipo, descripcion } = req.body;
+    if (!TIPOS_INCIDENTE.includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo de incidente invalido' });
+    }
+    const { rows } = await db.query(
+      `INSERT INTO incidentes_cliente (usuario_id, tipo, descripcion, reportado_por_rol, reportado_por_nombre)
+       VALUES ($1,$2,$3,'admin',$4) RETURNING id, created_at`,
+      [req.params.id, tipo, descripcion || null, req.auth.nombre || 'Admin']
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar el incidente' });
+  }
+});
+
+// ---------- SUSPENDER / BLOQUEAR / REACTIVAR CUENTA DE CLIENTE ----------
+// Nunca se elimina la cuenta: solo se cambia su estado, y queda el motivo y
+// quien lo hizo para respaldo ante reclamos o temas legales.
+function agregarDiasHabiles(desde, dias) {
+  const fecha = new Date(desde);
+  let agregados = 0;
+  while (agregados < dias) {
+    fecha.setDate(fecha.getDate() + 1);
+    const diaSemana = fecha.getDay(); // 0 = domingo, 6 = sabado
+    if (diaSemana !== 0 && diaSemana !== 6) agregados++;
+  }
+  return fecha;
+}
+
+router.post('/usuarios/:id/suspender', async (req, res) => {
+  try {
+    const { motivo } = req.body;
+    const hasta = agregarDiasHabiles(new Date(), 5);
+    await db.query(
+      `UPDATE usuarios SET estado_cuenta = 'suspendido', suspendido_hasta = $1,
+              estado_cuenta_motivo = $2, estado_cuenta_actualizado_at = now()
+       WHERE id = $3`,
+      [hasta, motivo || null, req.params.id]
+    );
+    res.json({ mensaje: 'Cuenta suspendida', suspendido_hasta: hasta });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al suspender la cuenta' });
+  }
+});
+
+router.post('/usuarios/:id/bloquear', async (req, res) => {
+  try {
+    const { motivo } = req.body;
+    await db.query(
+      `UPDATE usuarios SET estado_cuenta = 'bloqueado', suspendido_hasta = NULL,
+              estado_cuenta_motivo = $1, estado_cuenta_actualizado_at = now()
+       WHERE id = $2`,
+      [motivo || null, req.params.id]
+    );
+    res.json({ mensaje: 'Cuenta bloqueada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al bloquear la cuenta' });
+  }
+});
+
+router.post('/usuarios/:id/reactivar', async (req, res) => {
+  try {
+    await db.query(
+      `UPDATE usuarios SET estado_cuenta = 'activo', suspendido_hasta = NULL,
+              estado_cuenta_motivo = NULL, estado_cuenta_actualizado_at = now()
+       WHERE id = $1`,
+      [req.params.id]
+    );
+    res.json({ mensaje: 'Cuenta reactivada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al reactivar la cuenta' });
   }
 });
 

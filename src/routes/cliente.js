@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
 const { crearSesion } = require('../utils/sesiones');
+const { verificarEstadoCuenta } = require('../utils/moderacionCliente');
 
 const router = express.Router();
 
@@ -52,6 +53,9 @@ router.post('/login', async (req, res) => {
     if (!usuario || !usuario.password_hash || !(await bcrypt.compare(password || '', usuario.password_hash))) {
       return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
     }
+    const errorEstado = await verificarEstadoCuenta(usuario);
+    if (errorEstado) return res.status(403).json({ error: errorEstado });
+
     const sid = await crearSesion({ rol: 'cliente', referenciaId: usuario.id, req });
     const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre, sid });
     res.json({ token, nombre: usuario.nombre, zona: usuario.zona });
@@ -139,9 +143,11 @@ router.post('/perfil/password', async (req, res) => {
   }
 });
 
-// ---------- ELIMINAR CUENTA ----------
+// ---------- CERRAR CUENTA ----------
+// Por seguridad ante reclamos y temas legales, ninguna cuenta se elimina de
+// verdad: se bloquea (ya no se puede iniciar sesion) pero se conserva todo
+// su historial de pedidos, incidentes, etc.
 router.delete('/perfil', async (req, res) => {
-  const client = await db.pool.connect();
   try {
     const { password } = req.body;
     const { rows } = await db.query('SELECT password_hash FROM usuarios WHERE id = $1', [req.auth.id]);
@@ -150,20 +156,15 @@ router.delete('/perfil', async (req, res) => {
       return res.status(401).json({ error: 'Contraseña incorrecta' });
     }
 
-    await client.query('BEGIN');
-    // Los pedidos ya realizados se conservan como historial del negocio,
-    // solo se desvinculan de la cuenta que se elimina.
-    await client.query('UPDATE pedidos SET usuario_id = NULL WHERE usuario_id = $1', [req.auth.id]);
-    await client.query('DELETE FROM usuarios WHERE id = $1', [req.auth.id]);
-    await client.query('COMMIT');
+    await db.query(
+      `UPDATE usuarios SET estado_cuenta = 'bloqueado', estado_cuenta_motivo = 'Cerrada por el propio cliente', estado_cuenta_actualizado_at = now() WHERE id = $1`,
+      [req.auth.id]
+    );
 
-    res.json({ mensaje: 'Cuenta eliminada' });
+    res.json({ mensaje: 'Tu cuenta fue cerrada' });
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error(err);
-    res.status(500).json({ error: 'Error al eliminar la cuenta' });
-  } finally {
-    client.release();
+    res.status(500).json({ error: 'Error al cerrar la cuenta' });
   }
 });
 
