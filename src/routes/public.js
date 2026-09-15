@@ -129,8 +129,33 @@ const upload = multer({
 
 // ---------- CATEGORIAS DE PRODUCTOS (catalogo publico) ----------
 const CATEGORIAS = ['ropa', 'comida', 'bebidas', 'servicios', 'artesanias', 'otros'];
-router.get('/categorias', (req, res) => {
-  res.json(CATEGORIAS);
+const ORDEN_CATEGORIAS = new Map(CATEGORIAS.map((c, i) => [c, i]));
+// Solo devuelve las categorias que realmente tienen productos disponibles
+// (con stock, activos, de una tienda activa/disponible), filtrando por zona
+// si se indica. Si una categoria no tiene nada que ofrecer ahi, no aparece.
+router.get('/categorias', async (req, res) => {
+  try {
+    const { zona, tienda_id } = req.query;
+    const params = [];
+    let sql = `
+      SELECT DISTINCT p.categoria
+      FROM productos p JOIN tiendas t ON t.id = p.tienda_id
+      WHERE p.activo = true AND t.activo = true AND t.disponible = true AND p.stock > 0`;
+    if (tienda_id) {
+      params.push(tienda_id);
+      sql += ` AND p.tienda_id = $${params.length}`;
+    } else if (zona) {
+      params.push(zona);
+      sql += ` AND t.zona = $${params.length}`;
+    }
+    const { rows } = await db.query(sql, params);
+    const disponibles = rows.map((r) => r.categoria).filter((c) => ORDEN_CATEGORIAS.has(c));
+    disponibles.sort((a, b) => ORDEN_CATEGORIAS.get(a) - ORDEN_CATEGORIAS.get(b));
+    res.json(disponibles);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener categorias' });
+  }
 });
 
 // ---------- TIPOS DE NEGOCIO (categoria de la tienda, distinto del producto) ----------
