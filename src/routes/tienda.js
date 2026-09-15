@@ -193,7 +193,7 @@ router.get('/pedidos', async (req, res) => {
               p.cliente_nombre, p.cliente_telefono, p.referencia_entrega, p.lat_entrega, p.lng_entrega
        FROM pedido_items pi
        JOIN pedidos p ON p.id = pi.pedido_id
-       WHERE pi.tienda_id = $1 AND p.estado NOT IN ('pendiente_pago','pago_rechazado','cancelado')
+       WHERE pi.tienda_id = $1 AND p.estado NOT IN ('pendiente_pago','pago_rechazado')
        ORDER BY p.created_at DESC`,
       [req.auth.id]
     );
@@ -210,10 +210,15 @@ router.post('/pedidos/:pedidoId/items/:itemId/confirmar', async (req, res) => {
   try {
     const { pedidoId, itemId } = req.params;
     const { rows: item } = await client.query(
-      'SELECT * FROM pedido_items WHERE id = $1 AND pedido_id = $2 AND tienda_id = $3',
+      `SELECT pi.*, p.estado as pedido_estado FROM pedido_items pi
+       JOIN pedidos p ON p.id = pi.pedido_id
+       WHERE pi.id = $1 AND pi.pedido_id = $2 AND pi.tienda_id = $3`,
       [itemId, pedidoId, req.auth.id]
     );
     if (!item[0]) return res.status(404).json({ error: 'Item no encontrado' });
+    if (item[0].pedido_estado === 'cancelado') {
+      return res.status(400).json({ error: 'El cliente canceló este pedido' });
+    }
     if (item[0].estado_tienda !== 'pendiente') {
       return res.status(400).json({ error: 'Este item ya fue confirmado' });
     }
@@ -242,10 +247,15 @@ router.post('/pedidos/:pedidoId/items/:itemId/listo', async (req, res) => {
   try {
     const { pedidoId, itemId } = req.params;
     const { rows: item } = await client.query(
-      'SELECT * FROM pedido_items WHERE id = $1 AND pedido_id = $2 AND tienda_id = $3',
+      `SELECT pi.*, p.estado as pedido_estado FROM pedido_items pi
+       JOIN pedidos p ON p.id = pi.pedido_id
+       WHERE pi.id = $1 AND pi.pedido_id = $2 AND pi.tienda_id = $3`,
       [itemId, pedidoId, req.auth.id]
     );
     if (!item[0]) return res.status(404).json({ error: 'Item no encontrado' });
+    if (item[0].pedido_estado === 'cancelado') {
+      return res.status(400).json({ error: 'El cliente canceló este pedido' });
+    }
     if (item[0].estado_tienda === 'pendiente') {
       return res.status(400).json({ error: 'Primero confirma el item antes de marcarlo listo' });
     }
