@@ -354,6 +354,60 @@ router.get('/productos', async (req, res) => {
   res.json(rows);
 });
 
+// ---------- CUENTAS DE USUARIO (clientes) ----------
+router.get('/usuarios', async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT u.id, u.nombre, u.email, u.telefono, u.zona, u.created_at,
+             COUNT(p.id)::int as total_pedidos,
+             COALESCE(SUM(p.monto_total) FILTER (WHERE p.estado = 'entregado'), 0) as total_gastado
+      FROM usuarios u
+      LEFT JOIN pedidos p ON p.usuario_id = u.id
+      GROUP BY u.id
+      ORDER BY u.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener las cuentas de usuario' });
+  }
+});
+
+router.put('/usuarios/:id', async (req, res) => {
+  try {
+    const { nombre, email, telefono, zona } = req.body;
+    if (!nombre || !telefono) {
+      return res.status(400).json({ error: 'Nombre y teléfono son obligatorios' });
+    }
+    await db.query(
+      `UPDATE usuarios SET nombre = $1, email = $2, telefono = $3, zona = $4 WHERE id = $5`,
+      [nombre, email || null, telefono, zona || null, req.params.id]
+    );
+    res.json({ mensaje: 'Cuenta actualizada' });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Ese correo ya está en uso por otra cuenta' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar la cuenta' });
+  }
+});
+
+router.post('/usuarios/:id/password', async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    await db.query('UPDATE usuarios SET password_hash = $1 WHERE id = $2', [hash, req.params.id]);
+    res.json({ mensaje: 'Contraseña actualizada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar la contraseña' });
+  }
+});
+
 // ---------- RECLAMOS ----------
 router.get('/reclamos', async (req, res) => {
   const { estado } = req.query;
