@@ -223,4 +223,59 @@ router.post('/pedidos/:id/ubicacion', async (req, res) => {
   }
 });
 
+// ---------- OBSERVACION (tienda entrego mal / cliente se porto mal) ----------
+// Queda pendiente de revision: el admin confirma antes de que cuente
+// oficialmente (ej. antes de sumar al historial de incidentes del cliente).
+const TIPOS_OBSERVACION = ['entrega_incorrecta', 'producto_danado', 'falta_respeto', 'acoso', 'otro'];
+
+router.post('/pedidos/:id/observacion', async (req, res) => {
+  try {
+    const { dirigido_a, tipo, descripcion } = req.body;
+    if (!['tienda', 'cliente'].includes(dirigido_a)) {
+      return res.status(400).json({ error: 'dirigido_a debe ser "tienda" o "cliente"' });
+    }
+    if (!TIPOS_OBSERVACION.includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo de observacion invalido' });
+    }
+    const { rows } = await db.query('SELECT id FROM pedidos WHERE id = $1 AND repartidor_id = $2', [req.params.id, req.auth.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Pedido no encontrado' });
+
+    const { rows: creado } = await db.query(
+      `INSERT INTO observaciones_repartidor (pedido_id, repartidor_id, dirigido_a, tipo, descripcion)
+       VALUES ($1,$2,$3,$4,$5) RETURNING id, created_at`,
+      [req.params.id, req.auth.id, dirigido_a, tipo, descripcion || null]
+    );
+    res.status(201).json({ ...creado[0], mensaje: 'Observación registrada. Un administrador la revisará.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar la observación' });
+  }
+});
+
+// ---------- ENCUESTA DE ENTREGA (obligatoria tras cada entrega, con o sin codigo) ----------
+router.post('/pedidos/:id/encuesta', async (req, res) => {
+  try {
+    const { cliente_amable, hubo_problema, comentario } = req.body;
+    const { rows } = await db.query(
+      'SELECT estado FROM pedidos WHERE id = $1 AND repartidor_id = $2',
+      [req.params.id, req.auth.id]
+    );
+    const pedido = rows[0];
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    if (pedido.estado !== 'entregado') {
+      return res.status(400).json({ error: 'Solo se responde la encuesta despues de entregar el pedido' });
+    }
+    await db.query(
+      `INSERT INTO encuestas_entrega (pedido_id, repartidor_id, cliente_amable, hubo_problema, comentario)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (pedido_id) DO NOTHING`,
+      [req.params.id, req.auth.id, cliente_amable !== false, !!hubo_problema, comentario || null]
+    );
+    res.status(201).json({ mensaje: 'Gracias, encuesta registrada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar la encuesta' });
+  }
+});
+
 module.exports = router;

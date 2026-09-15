@@ -1,11 +1,25 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
 const { crearSesion } = require('../utils/sesiones');
 const { verificarEstadoCuenta } = require('../utils/moderacionCliente');
+const { subirImagen } = require('../utils/cloudinary');
+const { agregarDiasHabiles } = require('../utils/diasHabiles');
 
 const router = express.Router();
+
+const uploadReclamo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(jpeg|png|webp|jpg)$/.test(file.mimetype)) {
+      return cb(new Error('Solo se permiten imagenes (jpg, png, webp)'));
+    }
+    cb(null, true);
+  },
+});
 
 // ---------- REGISTRO ----------
 router.post('/registro', async (req, res) => {
@@ -231,7 +245,7 @@ router.post('/pedidos/:id/cancelar', async (req, res) => {
 // ---------- RECLAMOS ----------
 const MOTIVOS_RECLAMO = ['producto_incorrecto', 'producto_danado', 'no_recibido', 'otro'];
 
-router.post('/pedidos/:id/reclamo', async (req, res) => {
+router.post('/pedidos/:id/reclamo', uploadReclamo.array('imagenes', 4), async (req, res) => {
   try {
     const { motivo, descripcion } = req.body;
     if (!MOTIVOS_RECLAMO.includes(motivo)) {
@@ -240,9 +254,30 @@ router.post('/pedidos/:id/reclamo', async (req, res) => {
     const { rows } = await db.query('SELECT id FROM pedidos WHERE id = $1 AND usuario_id = $2', [req.params.id, req.auth.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Pedido no encontrado' });
 
+    const { rows: cuentaRows } = await db.query('SELECT nombre, telefono, email FROM usuarios WHERE id = $1', [req.auth.id]);
+    const cuenta = cuentaRows[0] || {};
+
+    const imagenes = [];
+    for (const file of req.files || []) {
+      try {
+        const resultado = await subirImagen(file.buffer, 'express-ancon/reclamos');
+        imagenes.push(resultado.secure_url || resultado.url);
+      } catch (err) {
+        console.error('Error subiendo imagen de reclamo', err);
+      }
+    }
+
+    const plazo = agregarDiasHabiles(new Date(), 7);
     const { rows: creado } = await db.query(
-      `INSERT INTO reclamos (pedido_id, usuario_id, motivo, descripcion) VALUES ($1,$2,$3,$4) RETURNING id, created_at`,
-      [req.params.id, req.auth.id, motivo, descripcion || null]
+      `INSERT INTO reclamos (
+        pedido_id, usuario_id, motivo, descripcion, origen,
+        nombre_reclamante, telefono_contacto, email_contacto, imagenes, plazo_respuesta_hasta
+      ) VALUES ($1,$2,$3,$4,'cliente',$5,$6,$7,$8,$9) RETURNING id, created_at`,
+      [
+        req.params.id, req.auth.id, motivo, descripcion || null,
+        cuenta.nombre || null, cuenta.telefono || null, cuenta.email || null,
+        JSON.stringify(imagenes), plazo,
+      ]
     );
     res.status(201).json({ id: creado[0].id, mensaje: 'Reclamo registrado. Un administrador lo revisará pronto.' });
   } catch (err) {

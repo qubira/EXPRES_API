@@ -6,6 +6,8 @@ const { firmarToken, requireRole } = require('../middleware/auth');
 const { registrarLogin } = require('../utils/auditoria');
 const { crearSesion } = require('../utils/sesiones');
 const { subirImagen } = require('../utils/cloudinary');
+const { agregarDiasHabiles, diasHabilesRestantes } = require('../utils/diasHabiles');
+const { evaluarEscalamiento } = require('../utils/moderacionCliente');
 
 const router = express.Router();
 
@@ -46,7 +48,7 @@ router.use(requireRole('admin'));
 router.post('/upload', upload.single('imagen'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibio ninguna imagen' });
-    const carpetasPermitidas = { tiendas: 'express-ancon/tiendas', repartidores: 'express-ancon/repartidores' };
+    const carpetasPermitidas = { tiendas: 'express-ancon/tiendas', repartidores: 'express-ancon/repartidores', reclamos: 'express-ancon/reclamos' };
     const carpeta = carpetasPermitidas[req.query.carpeta] || 'express-ancon/repartidores';
     const resultado = await subirImagen(req.file.buffer, carpeta);
     res.json({ url: resultado.secure_url });
@@ -456,7 +458,8 @@ router.post('/usuarios/:id/incidentes', async (req, res) => {
        VALUES ($1,$2,$3,'admin',$4) RETURNING id, created_at`,
       [req.params.id, tipo, descripcion || null, req.auth.nombre || 'Admin']
     );
-    res.status(201).json(rows[0]);
+    const accion = await evaluarEscalamiento(req.params.id);
+    res.status(201).json({ ...rows[0], accion_automatica: accion });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al registrar el incidente' });
@@ -466,24 +469,13 @@ router.post('/usuarios/:id/incidentes', async (req, res) => {
 // ---------- SUSPENDER / BLOQUEAR / REACTIVAR CUENTA DE CLIENTE ----------
 // Nunca se elimina la cuenta: solo se cambia su estado, y queda el motivo y
 // quien lo hizo para respaldo ante reclamos o temas legales.
-function agregarDiasHabiles(desde, dias) {
-  const fecha = new Date(desde);
-  let agregados = 0;
-  while (agregados < dias) {
-    fecha.setDate(fecha.getDate() + 1);
-    const diaSemana = fecha.getDay(); // 0 = domingo, 6 = sabado
-    if (diaSemana !== 0 && diaSemana !== 6) agregados++;
-  }
-  return fecha;
-}
-
 router.post('/usuarios/:id/suspender', async (req, res) => {
   try {
     const { motivo } = req.body;
     const hasta = agregarDiasHabiles(new Date(), 5);
     await db.query(
       `UPDATE usuarios SET estado_cuenta = 'suspendido', suspendido_hasta = $1,
-              estado_cuenta_motivo = $2, estado_cuenta_actualizado_at = now()
+              estado_cuenta_motivo = $2, estado_cuenta_actualizado_at = now(), alguna_vez_suspendido = true
        WHERE id = $3`,
       [hasta, motivo || null, req.params.id]
     );
@@ -561,20 +553,77 @@ router.post('/usuarios/:id/password', async (req, res) => {
 });
 
 // ---------- RECLAMOS ----------
+const MOTIVOS_RECLAMO_ADMIN = ['producto_incorrecto', 'producto_danado', 'no_recibido', 'trato_del_personal', 'otro'];
+
 router.get('/reclamos', async (req, res) => {
   const { estado } = req.query;
   const params = [];
   let sql = `
-    SELECT r.id, r.pedido_id, r.motivo, r.descripcion, r.estado, r.resolucion, r.created_at, r.resuelto_at,
-           p.cliente_nombre, p.estado as pedido_estado
-    FROM reclamos r JOIN pedidos p ON p.id = r.pedido_id`;
+    SELECT r.*,
+           p.cliente_nombre, p.estado as pedido_estado,
+           u.nombre as cuenta_nombre, u.email as cuenta_email
+    FROM reclamos r
+    LEFT JOIN pedidos p ON p.id = r.pedido_id
+    LEFT JOIN usuarios u ON u.id = r.usuario_id`;
   if (estado) {
     params.push(estado);
     sql += ` WHERE r.estado = $${params.length}`;
   }
   sql += ' ORDER BY r.created_at DESC LIMIT 200';
   const { rows } = await db.query(sql, params);
-  res.json(rows);
+  res.json(rows.map((r) => ({ ...r, dias_habiles_restantes: diasHabilesRestantes(r.plazo_respuesta_hasta) })));
+});
+
+// Busca una cuenta de cliente registrada por correo (para el intake manual
+// de reclamos: al tipear el correo, se autocompleta con su cuenta si existe).
+router.get('/usuarios/buscar-por-email', async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ error: 'Falta el correo' });
+    const { rows } = await db.query(
+      `SELECT id, nombre, email, telefono, zona FROM usuarios WHERE email = $1`,
+      [email]
+    );
+    res.json(rows[0] || null);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al buscar la cuenta' });
+  }
+});
+
+// Registro manual de un reclamo recibido fuera de la app (telefono, WhatsApp, etc.)
+router.post('/reclamos', async (req, res) => {
+  try {
+    const {
+      pedido_id, usuario_id, motivo, descripcion,
+      tipo_documento, dni_ce, nombre_reclamante, telefono_contacto, email_contacto,
+      permite_whatsapp, imagenes,
+    } = req.body;
+    if (!MOTIVOS_RECLAMO_ADMIN.includes(motivo)) {
+      return res.status(400).json({ error: 'Motivo de reclamo invalido' });
+    }
+    if (!nombre_reclamante || !telefono_contacto) {
+      return res.status(400).json({ error: 'Nombre y teléfono de contacto son obligatorios' });
+    }
+    const plazo = agregarDiasHabiles(new Date(), 7);
+    const { rows } = await db.query(
+      `INSERT INTO reclamos (
+        pedido_id, usuario_id, motivo, descripcion, origen,
+        tipo_documento, dni_ce, nombre_reclamante, telefono_contacto, email_contacto,
+        permite_whatsapp, imagenes, plazo_respuesta_hasta
+      ) VALUES ($1,$2,$3,$4,'admin',$5,$6,$7,$8,$9,$10,$11,$12)
+      RETURNING id, created_at, plazo_respuesta_hasta`,
+      [
+        pedido_id || null, usuario_id || null, motivo, descripcion || null,
+        tipo_documento || null, dni_ce || null, nombre_reclamante, telefono_contacto, email_contacto || null,
+        !!permite_whatsapp, JSON.stringify(Array.isArray(imagenes) ? imagenes : []), plazo,
+      ]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar el reclamo' });
+  }
 });
 
 router.post('/reclamos/:id/resolver', async (req, res) => {
@@ -592,6 +641,80 @@ router.post('/reclamos/:id/resolver', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al actualizar el reclamo' });
+  }
+});
+
+// ---------- OBSERVACIONES DEL REPARTIDOR (tienda entrego mal / cliente se porto mal) ----------
+router.get('/observaciones-repartidor', async (req, res) => {
+  try {
+    const { estado } = req.query;
+    const params = [];
+    let sql = `
+      SELECT o.*, r.nombre as repartidor_nombre, p.cliente_nombre, p.zona_entrega, p.usuario_id
+      FROM observaciones_repartidor o
+      JOIN repartidores r ON r.id = o.repartidor_id
+      JOIN pedidos p ON p.id = o.pedido_id`;
+    if (estado) {
+      params.push(estado);
+      sql += ` WHERE o.estado = $${params.length}`;
+    }
+    sql += ' ORDER BY o.created_at DESC LIMIT 200';
+    const { rows } = await db.query(sql, params);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener las observaciones' });
+  }
+});
+
+const MOTIVO_OBS_A_INCIDENTE = { falta_respeto: 'falta_respeto', acoso: 'acoso' };
+
+router.post('/observaciones-repartidor/:id/confirmar', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT o.*, p.usuario_id FROM observaciones_repartidor o JOIN pedidos p ON p.id = o.pedido_id WHERE o.id = $1`,
+      [req.params.id]
+    );
+    const obs = rows[0];
+    if (!obs) return res.status(404).json({ error: 'Observación no encontrada' });
+    if (obs.estado !== 'pendiente_revision') return res.status(400).json({ error: 'Esta observación ya fue revisada' });
+
+    await db.query(
+      `UPDATE observaciones_repartidor SET estado = 'confirmado', revisado_por = $1, revisado_at = now() WHERE id = $2`,
+      [req.auth.nombre || 'Admin', req.params.id]
+    );
+
+    let accionAutomatica = null;
+    // Solo las observaciones dirigidas al cliente, con un motivo que aplica
+    // (falta de respeto / acoso), suman al historial de incidentes.
+    if (obs.dirigido_a === 'cliente' && obs.usuario_id && MOTIVO_OBS_A_INCIDENTE[obs.tipo]) {
+      await db.query(
+        `INSERT INTO incidentes_cliente (usuario_id, tipo, descripcion, reportado_por_rol, reportado_por_nombre)
+         VALUES ($1,$2,$3,'repartidor',$4)`,
+        [obs.usuario_id, MOTIVO_OBS_A_INCIDENTE[obs.tipo], obs.descripcion, 'Confirmado por admin desde observación de repartidor']
+      );
+      accionAutomatica = await evaluarEscalamiento(obs.usuario_id);
+    }
+
+    res.json({ mensaje: 'Observación confirmada', accion_automatica: accionAutomatica });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al confirmar la observación' });
+  }
+});
+
+router.post('/observaciones-repartidor/:id/descartar', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `UPDATE observaciones_repartidor SET estado = 'descartado', revisado_por = $1, revisado_at = now()
+       WHERE id = $2 AND estado = 'pendiente_revision' RETURNING id`,
+      [req.auth.nombre || 'Admin', req.params.id]
+    );
+    if (!rows[0]) return res.status(400).json({ error: 'Esta observación ya fue revisada o no existe' });
+    res.json({ mensaje: 'Observación descartada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al descartar la observación' });
   }
 });
 

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   suspendido_hasta TIMESTAMPTZ,
   estado_cuenta_motivo TEXT,
   estado_cuenta_actualizado_at TIMESTAMPTZ,
+  alguna_vez_suspendido BOOLEAN NOT NULL DEFAULT false, -- para escalar a bloqueo si reincide
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
@@ -25,6 +26,7 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_cuenta VARCHAR(20) NOT NULL
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS suspendido_hasta TIMESTAMPTZ;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_cuenta_motivo TEXT;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado_cuenta_actualizado_at TIMESTAMPTZ;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS alguna_vez_suspendido BOOLEAN NOT NULL DEFAULT false;
 DROP INDEX IF EXISTS idx_usuarios_telefono_unico;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_unico ON usuarios(email);
 CREATE INDEX IF NOT EXISTS idx_usuarios_telefono ON usuarios(telefono);
@@ -261,17 +263,66 @@ CREATE INDEX IF NOT EXISTS idx_pedido_items_tienda ON pedido_items(tienda_id);
 -- ---------- RECLAMOS (quejas del cliente sobre un pedido) ----------
 CREATE TABLE IF NOT EXISTS reclamos (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  pedido_id    UUID NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+  pedido_id    UUID REFERENCES pedidos(id) ON DELETE CASCADE,
   usuario_id   UUID REFERENCES usuarios(id),
   motivo       VARCHAR(40) NOT NULL, -- producto_incorrecto | producto_danado | no_recibido | otro
   descripcion  TEXT,
   estado       VARCHAR(20) NOT NULL DEFAULT 'abierto', -- abierto | en_revision | resuelto
   resolucion   TEXT,
+  origen              VARCHAR(20) NOT NULL DEFAULT 'cliente', -- cliente (autoservicio) | admin (registrado por telefono/whatsapp)
+  tipo_documento      VARCHAR(10), -- dni | ce (solo si lo registro el admin)
+  dni_ce              VARCHAR(20),
+  nombre_reclamante   VARCHAR(120),
+  telefono_contacto   VARCHAR(20),
+  email_contacto      VARCHAR(160),
+  permite_whatsapp    BOOLEAN NOT NULL DEFAULT false,
+  imagenes            JSONB NOT NULL DEFAULT '[]'::jsonb, -- URLs de evidencia
+  plazo_respuesta_hasta TIMESTAMPTZ, -- SLA: 7 dias habiles desde que se registro
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   resuelto_at  TIMESTAMPTZ
 );
+ALTER TABLE reclamos ALTER COLUMN pedido_id DROP NOT NULL;
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS origen VARCHAR(20) NOT NULL DEFAULT 'cliente';
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(10);
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS dni_ce VARCHAR(20);
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS nombre_reclamante VARCHAR(120);
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS telefono_contacto VARCHAR(20);
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS email_contacto VARCHAR(160);
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS permite_whatsapp BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS imagenes JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS plazo_respuesta_hasta TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_reclamos_pedido ON reclamos(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_reclamos_estado ON reclamos(estado);
+
+-- ---------- OBSERVACIONES DEL REPARTIDOR (tienda entrego mal / cliente se porto mal) ----------
+-- El admin revisa antes de que cuente oficialmente (ej. antes de sumar al
+-- historial de incidentes de un cliente y disparar una suspension).
+CREATE TABLE IF NOT EXISTS observaciones_repartidor (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pedido_id        UUID NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+  repartidor_id    UUID NOT NULL REFERENCES repartidores(id),
+  dirigido_a       VARCHAR(10) NOT NULL, -- tienda | cliente
+  tipo             VARCHAR(30) NOT NULL, -- entrega_incorrecta | producto_danado | falta_respeto | acoso | otro
+  descripcion      TEXT,
+  estado           VARCHAR(20) NOT NULL DEFAULT 'pendiente_revision', -- pendiente_revision | confirmado | descartado
+  revisado_por     VARCHAR(120),
+  revisado_at      TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_observaciones_repartidor_pedido ON observaciones_repartidor(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_observaciones_repartidor_estado ON observaciones_repartidor(estado);
+
+-- ---------- ENCUESTA DE ENTREGA (el repartidor la responde tras cada entrega) ----------
+CREATE TABLE IF NOT EXISTS encuestas_entrega (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pedido_id      UUID NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+  repartidor_id  UUID NOT NULL REFERENCES repartidores(id),
+  cliente_amable BOOLEAN NOT NULL DEFAULT true,
+  hubo_problema  BOOLEAN NOT NULL DEFAULT false,
+  comentario     TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_encuestas_entrega_pedido ON encuestas_entrega(pedido_id);
 
 -- ---------- PAGOS ----------
 CREATE TABLE IF NOT EXISTS pagos (
