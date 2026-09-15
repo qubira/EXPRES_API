@@ -129,7 +129,17 @@ router.get('/pagos', async (req, res) => {
   try {
     const { estado } = req.query;
     const params = [];
-    let sql = `SELECT pg.*, p.cliente_nombre, p.cliente_telefono, p.monto_total, p.zona_entrega
+    let sql = `SELECT pg.*, p.cliente_nombre, p.cliente_telefono, p.monto_productos, p.delivery_fee, p.monto_total, p.zona_entrega,
+               (
+                 SELECT json_agg(json_build_object(
+                   'nombre_producto', pi.nombre_producto,
+                   'cantidad', pi.cantidad,
+                   'subtotal', pi.subtotal,
+                   'tienda_nombre', t.nombre
+                 ) ORDER BY t.nombre, pi.nombre_producto)
+                 FROM pedido_items pi JOIN tiendas t ON t.id = pi.tienda_id
+                 WHERE pi.pedido_id = p.id
+               ) as items
                FROM pagos pg JOIN pedidos p ON p.id = pg.pedido_id`;
     if (estado) {
       params.push(estado);
