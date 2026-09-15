@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS tiendas (
   contacto_telefono  VARCHAR(20),
   contacto_whatsapp  VARCHAR(20),
   zona               VARCHAR(80), -- ej: "Playa Ancon - Malecon"
+  direccion          TEXT, -- direccion del local fisico (ej. restaurantes con mesas para comer ahi)
   comision_pactada   NUMERIC(5,2) NOT NULL DEFAULT 12.00, -- % comision de la plataforma
   email              VARCHAR(160) UNIQUE,
   password_hash      VARCHAR(255) NOT NULL,
@@ -105,6 +106,7 @@ CREATE TABLE IF NOT EXISTS tiendas (
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(100);
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS dni_titular VARCHAR(20);
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS nombre_titular VARCHAR(150);
+ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS direccion TEXT;
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS disponible BOOLEAN NOT NULL DEFAULT true;
 CREATE INDEX IF NOT EXISTS idx_tiendas_categoria ON tiendas(categoria);
 CREATE INDEX IF NOT EXISTS idx_tiendas_activo ON tiendas(activo);

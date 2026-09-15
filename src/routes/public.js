@@ -183,7 +183,7 @@ router.get('/tiendas', async (req, res) => {
   try {
     const { categoria, zona } = req.query;
     const params = [];
-    let sql = `SELECT id, nombre, categoria, descripcion, logo_url, zona, contacto_whatsapp
+    let sql = `SELECT id, nombre, categoria, descripcion, logo_url, zona, direccion, contacto_whatsapp
                FROM tiendas WHERE activo = true AND disponible = true`;
     if (categoria) {
       params.push(categoria);
@@ -205,7 +205,7 @@ router.get('/tiendas', async (req, res) => {
 router.get('/tiendas/:id', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, nombre, categoria, descripcion, logo_url, zona, contacto_whatsapp
+      `SELECT id, nombre, categoria, descripcion, logo_url, zona, direccion, contacto_whatsapp
        FROM tiendas WHERE id = $1 AND activo = true AND disponible = true`,
       [req.params.id]
     );
@@ -222,7 +222,8 @@ router.get('/tiendas/:id', async (req, res) => {
 // duena del producto, vía /api/tienda/productos).
 const CAMPOS_PRODUCTO_PUBLICO = `p.id, p.nombre, p.marca, p.descripcion, p.categoria, p.subcategoria,
        p.precio, p.unidad, p.contenido, p.foto_url,
-       t.id as tienda_id, t.nombre as tienda_nombre, t.zona as tienda_zona, t.contacto_whatsapp as tienda_whatsapp`;
+       t.id as tienda_id, t.nombre as tienda_nombre, t.categoria as tienda_categoria, t.zona as tienda_zona,
+       t.direccion as tienda_direccion, t.contacto_whatsapp as tienda_whatsapp`;
 
 router.get('/productos', async (req, res) => {
   try {
