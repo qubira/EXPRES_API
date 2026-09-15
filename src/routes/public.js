@@ -7,6 +7,7 @@ const db = require('../db');
 const { generarPin } = require('../utils/pin');
 const { subirImagen } = require('../utils/cloudinary');
 const { consultarDni } = require('../utils/decolecta');
+const { consultarCe } = require('../utils/verificaid');
 const { registrarLogin } = require('../utils/auditoria');
 const { crearSesion } = require('../utils/sesiones');
 const { JWT_SECRET, requireAnyRole, firmarToken } = require('../middleware/auth');
@@ -529,6 +530,30 @@ router.get('/consulta-dni/:numero', async (req, res) => {
     console.error(err);
     res.status(err.status === 429 ? 429 : 502).json({
       error: err.status === 429 ? 'Se alcanzó el límite de consultas de DNI. Ingresa el nombre manualmente.' : 'No se pudo consultar el DNI, ingresa el nombre manualmente',
+    });
+  }
+});
+
+// ---------- CONSULTA CE (Migraciones via VerificaID) - autocompletar nombre del extranjero ----------
+router.get('/consulta-ce/:numero', async (req, res) => {
+  try {
+    const { numero } = req.params;
+    const { fecha_nacimiento } = req.query;
+    if (!numero || !fecha_nacimiento) {
+      return res.status(400).json({ error: 'El número de CE y la fecha de nacimiento son obligatorios' });
+    }
+    const resultado = await consultarCe(numero, fecha_nacimiento);
+    if (!resultado) return res.status(404).json({ error: 'CE no encontrado' });
+    res.json(resultado);
+  } catch (err) {
+    console.error(err);
+    const status = err.status === 429 || err.status === 402 ? err.status : 502;
+    res.status(status).json({
+      error: err.status === 402
+        ? 'El servicio de consulta de CE no tiene créditos disponibles. Ingresa el nombre manualmente.'
+        : err.status === 429
+          ? 'Se alcanzó el límite de consultas de CE. Ingresa el nombre manualmente.'
+          : 'No se pudo consultar el CE, ingresa el nombre manualmente',
     });
   }
 });
