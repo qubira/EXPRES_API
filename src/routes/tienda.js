@@ -5,6 +5,7 @@ const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
 const { subirImagen } = require('../utils/cloudinary');
 const { registrarLogin } = require('../utils/auditoria');
+const { crearSesion } = require('../utils/sesiones');
 
 const router = express.Router();
 
@@ -33,7 +34,8 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ error: 'Tu tienda aun no esta activada. Contacta al administrador.' });
     }
     registrarLogin({ rol: 'tienda', referenciaId: tienda.id, nombre: tienda.nombre, req, exito: true });
-    const token = firmarToken({ role: 'tienda', id: tienda.id, nombre: tienda.nombre });
+    const sid = await crearSesion({ rol: 'tienda', referenciaId: tienda.id, req });
+    const token = firmarToken({ role: 'tienda', id: tienda.id, nombre: tienda.nombre, sid });
     res.json({ token, nombre: tienda.nombre });
   } catch (err) {
     console.error(err);

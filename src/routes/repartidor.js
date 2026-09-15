@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
 const { registrarLogin } = require('../utils/auditoria');
+const { crearSesion } = require('../utils/sesiones');
 
 const router = express.Router();
 
@@ -20,7 +21,8 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ error: 'Tu cuenta esta inactiva. Contacta al administrador.' });
     }
     registrarLogin({ rol: 'repartidor', referenciaId: rep.id, nombre: rep.nombre, req, exito: true });
-    const token = firmarToken({ role: 'repartidor', id: rep.id, nombre: rep.nombre });
+    const sid = await crearSesion({ rol: 'repartidor', referenciaId: rep.id, req });
+    const token = firmarToken({ role: 'repartidor', id: rep.id, nombre: rep.nombre, sid });
     res.json({ token, nombre: rep.nombre });
   } catch (err) {
     console.error(err);

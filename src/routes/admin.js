@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
 const { registrarLogin } = require('../utils/auditoria');
+const { crearSesion } = require('../utils/sesiones');
 
 const router = express.Router();
 
@@ -17,7 +18,8 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Credenciales invalidas' });
     }
     registrarLogin({ rol: 'admin', referenciaId: admin.id, nombre: admin.nombre, req, exito: true });
-    const token = firmarToken({ role: 'admin', id: admin.id, nombre: admin.nombre });
+    const sid = await crearSesion({ rol: 'admin', referenciaId: admin.id, req });
+    const token = firmarToken({ role: 'admin', id: admin.id, nombre: admin.nombre, sid });
     res.json({ token, nombre: admin.nombre });
   } catch (err) {
     console.error(err);

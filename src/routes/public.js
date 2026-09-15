@@ -8,6 +8,7 @@ const { generarPin } = require('../utils/pin');
 const { subirImagen } = require('../utils/cloudinary');
 const { consultarDni } = require('../utils/decolecta');
 const { registrarLogin } = require('../utils/auditoria');
+const { crearSesion } = require('../utils/sesiones');
 const { JWT_SECRET, requireAnyRole, firmarToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -64,7 +65,8 @@ router.post('/login', async (req, res) => {
       if (rol !== 'cliente') {
         registrarLogin({ rol, referenciaId: cuenta.id, nombre: cuenta.nombre, req, exito: true });
       }
-      const token = firmarToken({ role: rol, id: cuenta.id, nombre: cuenta.nombre });
+      const sid = await crearSesion({ rol, referenciaId: cuenta.id, req });
+      const token = firmarToken({ role: rol, id: cuenta.id, nombre: cuenta.nombre, sid });
       return res.json({ token, nombre: cuenta.nombre, rol, zona: cuenta.zona || null });
     }
 
@@ -73,6 +75,39 @@ router.post('/login', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Error al iniciar sesión' });
   }
+});
+
+// ---------- CONECTIVIDAD (sesiones activas de MI cuenta) ----------
+const TODOS_LOS_ROLES = ['admin', 'tienda', 'repartidor', 'cliente'];
+
+router.get('/mis-sesiones', requireAnyRole(TODOS_LOS_ROLES), async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT id, ip, user_agent, creado_en
+     FROM sesiones WHERE rol = $1 AND referencia_id = $2 AND activa = true
+     ORDER BY creado_en DESC`,
+    [req.auth.role, req.auth.id]
+  );
+  res.json(rows.map((r) => ({ ...r, actual: r.id === req.auth.sid })));
+});
+
+router.post('/mis-sesiones/:id/cerrar', requireAnyRole(TODOS_LOS_ROLES), async (req, res) => {
+  if (req.params.id === req.auth.sid) {
+    return res.status(400).json({ error: 'No puedes cerrar la sesión que estás usando ahora mismo' });
+  }
+  const { rows } = await db.query(
+    `UPDATE sesiones SET activa = false WHERE id = $1 AND rol = $2 AND referencia_id = $3 RETURNING id`,
+    [req.params.id, req.auth.role, req.auth.id]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Sesión no encontrada' });
+  res.json({ mensaje: 'Sesión cerrada' });
+});
+
+router.post('/mis-sesiones/cerrar-otras', requireAnyRole(TODOS_LOS_ROLES), async (req, res) => {
+  const { rowCount } = await db.query(
+    `UPDATE sesiones SET activa = false WHERE rol = $1 AND referencia_id = $2 AND id != $3 AND activa = true`,
+    [req.auth.role, req.auth.id, req.auth.sid]
+  );
+  res.json({ mensaje: `${rowCount} sesión(es) cerrada(s)` });
 });
 
 const upload = multer({

@@ -69,6 +69,18 @@ CREATE TABLE IF NOT EXISTS auditoria (
 );
 CREATE INDEX IF NOT EXISTS idx_auditoria_created_at ON auditoria(created_at DESC);
 
+-- ---------- SESIONES (conectividad: quien esta conectado, permite cerrar otras) ----------
+CREATE TABLE IF NOT EXISTS sesiones (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rol              VARCHAR(20) NOT NULL, -- admin | tienda | repartidor | cliente
+  referencia_id    UUID NOT NULL,
+  ip               VARCHAR(64),
+  user_agent       TEXT,
+  creado_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  activa           BOOLEAN NOT NULL DEFAULT true
+);
+CREATE INDEX IF NOT EXISTS idx_sesiones_cuenta ON sesiones(rol, referencia_id);
+
 -- ---------- TIENDAS / AMBULANTES SOCIOS ----------
 CREATE TABLE IF NOT EXISTS tiendas (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),

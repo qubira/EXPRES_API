@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
+const { crearSesion } = require('../utils/sesiones');
 
 const router = express.Router();
 
@@ -30,7 +31,8 @@ router.post('/registro', async (req, res) => {
       [nombre, email, telefono, hash]
     );
     const usuario = rows[0];
-    const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre });
+    const sid = await crearSesion({ rol: 'cliente', referenciaId: usuario.id, req });
+    const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre, sid });
     res.status(201).json({ token, nombre: usuario.nombre });
   } catch (err) {
     if (err.code === '23505') {
@@ -50,7 +52,8 @@ router.post('/login', async (req, res) => {
     if (!usuario || !usuario.password_hash || !(await bcrypt.compare(password || '', usuario.password_hash))) {
       return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
     }
-    const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre });
+    const sid = await crearSesion({ rol: 'cliente', referenciaId: usuario.id, req });
+    const token = firmarToken({ role: 'cliente', id: usuario.id, nombre: usuario.nombre, sid });
     res.json({ token, nombre: usuario.nombre, zona: usuario.zona });
   } catch (err) {
     console.error(err);
