@@ -52,9 +52,10 @@ router.get('/pedidos', async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT id, cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega, estado,
-              monto_total, delivery_fee, asignado_at, recogido_at, entregado_at, created_at
+              monto_total, delivery_fee, asignado_at, recogido_at, entregado_at, created_at,
+              lat_entrega, lng_entrega
        FROM pedidos
-       WHERE repartidor_id = $1 AND estado NOT IN ('entregado','cancelado','pago_rechazado')
+       WHERE repartidor_id = $1 AND estado NOT IN ('entregado','cancelado','pago_rechazado','rechazado_en_entrega')
        ORDER BY created_at ASC`,
       [req.auth.id]
     );
