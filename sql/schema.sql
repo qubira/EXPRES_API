@@ -159,9 +159,11 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(80);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS unidad VARCHAR(20) NOT NULL DEFAULT 'unidad';
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS contenido NUMERIC(10,2);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS vistas INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS es_combo BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_productos_tienda ON productos(tienda_id);
 CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos(categoria);
 CREATE INDEX IF NOT EXISTS idx_productos_subcategoria ON productos(subcategoria);
+CREATE INDEX IF NOT EXISTS idx_productos_es_combo ON productos(es_combo);
 
 -- ---------- REPARTIDORES ----------
 CREATE TABLE IF NOT EXISTS repartidores (

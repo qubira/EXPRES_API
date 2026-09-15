@@ -251,13 +251,13 @@ router.get('/tiendas/:id', async (req, res) => {
 // Nota: el stock NUNCA se expone en las rutas publicas (solo lo ve la tienda
 // duena del producto, vía /api/tienda/productos).
 const CAMPOS_PRODUCTO_PUBLICO = `p.id, p.nombre, p.marca, p.descripcion, p.categoria, p.subcategoria,
-       p.precio, p.unidad, p.contenido, p.foto_url,
+       p.precio, p.unidad, p.contenido, p.foto_url, p.es_combo,
        t.id as tienda_id, t.nombre as tienda_nombre, t.categoria as tienda_categoria, t.zona as tienda_zona,
        t.direccion as tienda_direccion, t.contacto_whatsapp as tienda_whatsapp`;
 
 router.get('/productos', async (req, res) => {
   try {
-    const { categoria, subcategoria, tienda_id, q, zona } = req.query;
+    const { categoria, subcategoria, tienda_id, q, zona, es_combo } = req.query;
     const params = [];
     let sql = `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
                FROM productos p
@@ -282,6 +282,9 @@ router.get('/productos', async (req, res) => {
     if (zona) {
       params.push(zona);
       sql += ` AND t.zona = $${params.length}`;
+    }
+    if (es_combo === 'true') {
+      sql += ` AND p.es_combo = true`;
     }
     sql += ' ORDER BY p.created_at DESC';
     const { rows } = await db.query(sql, params);
