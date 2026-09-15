@@ -216,6 +216,29 @@ router.get('/tiendas', async (req, res) => {
   res.json(rows);
 });
 
+// ---------- PRODUCTOS DE UNA TIENDA CON METRICAS (vistas, pedidos, ventas, cancelados) ----------
+router.get('/tiendas/:id/productos', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT p.id, p.nombre, p.categoria, p.subcategoria, p.unidad, p.contenido, p.precio, p.stock, p.activo, p.vistas,
+              COUNT(pi.id)::int as total_pedidos,
+              COUNT(pi.id) FILTER (WHERE pd.estado = 'entregado')::int as ventas,
+              COUNT(pi.id) FILTER (WHERE pd.estado IN ('cancelado','pago_rechazado','rechazado_en_entrega'))::int as cancelados
+       FROM productos p
+       LEFT JOIN pedido_items pi ON pi.producto_id = p.id
+       LEFT JOIN pedidos pd ON pd.id = pi.pedido_id
+       WHERE p.tienda_id = $1
+       GROUP BY p.id
+       ORDER BY p.created_at DESC`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener los productos de la tienda' });
+  }
+});
+
 router.post('/tiendas', async (req, res) => {
   try {
     const { nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_telefono, contacto_whatsapp, zona, direccion, comision_pactada, email, password, logo_url } = req.body;

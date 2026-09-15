@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS productos (
   stock        INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
   foto_url     TEXT,
   activo       BOOLEAN NOT NULL DEFAULT true,
+  vistas       INTEGER NOT NULL DEFAULT 0, -- veces que se abrio la ficha del producto
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -133,6 +134,7 @@ ALTER TABLE productos ADD COLUMN IF NOT EXISTS marca VARCHAR(100);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(80);
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS unidad VARCHAR(20) NOT NULL DEFAULT 'unidad';
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS contenido NUMERIC(10,2);
+ALTER TABLE productos ADD COLUMN IF NOT EXISTS vistas INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_productos_tienda ON productos(tienda_id);
 CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos(categoria);
 CREATE INDEX IF NOT EXISTS idx_productos_subcategoria ON productos(subcategoria);

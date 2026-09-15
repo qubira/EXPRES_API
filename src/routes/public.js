@@ -275,6 +275,9 @@ router.get('/productos/:id', async (req, res) => {
     const producto = rows[0];
     if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
 
+    // Contador de vistas para metricas del negocio (no bloquea la respuesta al cliente).
+    db.query('UPDATE productos SET vistas = vistas + 1 WHERE id = $1', [producto.id]).catch(() => {});
+
     let similares = [];
     if (producto.subcategoria) {
       const { rows: relacionados } = await db.query(
