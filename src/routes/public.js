@@ -7,7 +7,7 @@ const db = require('../db');
 const { generarPin } = require('../utils/pin');
 const { subirImagen } = require('../utils/cloudinary');
 const { consultarDni } = require('../utils/decolecta');
-const { consultarCe } = require('../utils/verificaid');
+const { consultarCe } = require('../utils/jsonpe');
 const { registrarLogin } = require('../utils/auditoria');
 const { crearSesion } = require('../utils/sesiones');
 const { JWT_SECRET, requireAnyRole, firmarToken } = require('../middleware/auth');
@@ -538,11 +538,10 @@ router.get('/consulta-dni/:numero', async (req, res) => {
 router.get('/consulta-ce/:numero', async (req, res) => {
   try {
     const { numero } = req.params;
-    const { fecha_nacimiento } = req.query;
-    if (!numero || !fecha_nacimiento) {
-      return res.status(400).json({ error: 'El número de CE y la fecha de nacimiento son obligatorios' });
+    if (!numero) {
+      return res.status(400).json({ error: 'El número de CE es obligatorio' });
     }
-    const resultado = await consultarCe(numero, fecha_nacimiento);
+    const resultado = await consultarCe(numero);
     if (!resultado) return res.status(404).json({ error: 'CE no encontrado' });
     res.json(resultado);
   } catch (err) {
