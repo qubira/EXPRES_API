@@ -135,17 +135,33 @@ CREATE INDEX IF NOT EXISTS idx_productos_subcategoria ON productos(subcategoria)
 
 -- ---------- REPARTIDORES ----------
 CREATE TABLE IF NOT EXISTS repartidores (
-  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  nombre         VARCHAR(120) NOT NULL,
-  dni            VARCHAR(15) NOT NULL UNIQUE,
-  telefono       VARCHAR(20) NOT NULL,
-  email          VARCHAR(160) UNIQUE,
-  password_hash  VARCHAR(255) NOT NULL,
-  disponible     BOOLEAN NOT NULL DEFAULT true,
-  pago_pendiente NUMERIC(10,2) NOT NULL DEFAULT 0, -- tarifas acumuladas por pagar al repartidor
-  activo         BOOLEAN NOT NULL DEFAULT true,
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre                      VARCHAR(120) NOT NULL,
+  dni                         VARCHAR(15) NOT NULL UNIQUE, -- numero de DNI o de CE, segun tipo_documento
+  tipo_documento              VARCHAR(10) NOT NULL DEFAULT 'dni', -- dni (peruano) | ce (extranjero)
+  nacionalidad                VARCHAR(60) DEFAULT 'Peruana',
+  edad                        INTEGER,
+  telefono                    VARCHAR(20) NOT NULL,
+  direccion                   TEXT,
+  contacto_emergencia_nombre  VARCHAR(120),
+  contacto_emergencia_telefono VARCHAR(20),
+  antecedentes_penales        BOOLEAN,
+  foto_url                    TEXT,
+  email                       VARCHAR(160) UNIQUE,
+  password_hash               VARCHAR(255) NOT NULL,
+  disponible                  BOOLEAN NOT NULL DEFAULT true,
+  pago_pendiente              NUMERIC(10,2) NOT NULL DEFAULT 0, -- tarifas acumuladas por pagar al repartidor
+  activo                      BOOLEAN NOT NULL DEFAULT true,
+  created_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(10) NOT NULL DEFAULT 'dni';
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS nacionalidad VARCHAR(60) DEFAULT 'Peruana';
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS edad INTEGER;
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS direccion TEXT;
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS contacto_emergencia_nombre VARCHAR(120);
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS contacto_emergencia_telefono VARCHAR(20);
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS antecedentes_penales BOOLEAN;
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS foto_url TEXT;
 
 -- ---------- PEDIDOS ----------
 -- estado: pendiente_pago -> pagado -> preparando -> listo_recoger -> recogido -> entregado

@@ -1,11 +1,24 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
 const { registrarLogin } = require('../utils/auditoria');
 const { crearSesion } = require('../utils/sesiones');
+const { subirImagen } = require('../utils/cloudinary');
 
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(jpeg|png|webp|jpg)$/.test(file.mimetype)) {
+      return cb(new Error('Solo se permiten imagenes (jpg, png, webp)'));
+    }
+    cb(null, true);
+  },
+});
 
 // ---------- LOGIN ----------
 router.post('/login', async (req, res) => {
@@ -28,6 +41,18 @@ router.post('/login', async (req, res) => {
 });
 
 router.use(requireRole('admin'));
+
+// ---------- SUBIR IMAGEN (ej. foto de repartidor) ----------
+router.post('/upload', upload.single('imagen'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibio ninguna imagen' });
+    const resultado = await subirImagen(req.file.buffer, 'express-ancon/repartidores');
+    res.json({ url: resultado.secure_url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al subir la imagen' });
+  }
+});
 
 // ---------- DASHBOARD / METRICAS ----------
 router.get('/metricas', async (req, res) => {
@@ -246,26 +271,46 @@ router.post('/tiendas/:id/password', async (req, res) => {
 
 // ---------- REPARTIDORES (CRUD) ----------
 router.get('/repartidores', async (req, res) => {
-  const { rows } = await db.query('SELECT id, nombre, dni, telefono, email, disponible, pago_pendiente, activo FROM repartidores ORDER BY created_at DESC');
+  const { rows } = await db.query(
+    `SELECT id, nombre, dni, tipo_documento, nacionalidad, edad, telefono, direccion,
+            contacto_emergencia_nombre, contacto_emergencia_telefono, antecedentes_penales,
+            foto_url, email, disponible, pago_pendiente, activo
+     FROM repartidores ORDER BY created_at DESC`
+  );
   res.json(rows);
 });
 
 router.post('/repartidores', async (req, res) => {
   try {
-    const { nombre, dni, telefono, email, password } = req.body;
+    const {
+      nombre, dni, tipo_documento, nacionalidad, edad, telefono, email, password,
+      direccion, contacto_emergencia_nombre, contacto_emergencia_telefono,
+      antecedentes_penales, foto_url,
+    } = req.body;
+
     if (!nombre || !dni || !telefono || !email || !password) {
-      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+      return res.status(400).json({ error: 'Nombre, documento, teléfono, email y contraseña son obligatorios' });
     }
+    const tipoDoc = tipo_documento === 'ce' ? 'ce' : 'dni';
+    if (tipoDoc === 'dni' && !/^\d{8}$/.test(dni)) {
+      return res.status(400).json({ error: 'El DNI debe tener 8 dígitos' });
+    }
+
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
-      `INSERT INTO repartidores (nombre, dni, telefono, email, password_hash)
-       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-      [nombre, dni, telefono, email, hash]
+      `INSERT INTO repartidores (
+        nombre, dni, tipo_documento, nacionalidad, edad, telefono, email, password_hash,
+        direccion, contacto_emergencia_nombre, contacto_emergencia_telefono,
+        antecedentes_penales, foto_url
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+      [nombre, dni, tipoDoc, nacionalidad || (tipoDoc === 'dni' ? 'Peruana' : null), edad || null,
+        telefono, email, hash, direccion || null, contacto_emergencia_nombre || null,
+        contacto_emergencia_telefono || null, antecedentes_penales === true, foto_url || null]
     );
     res.status(201).json({ id: rows[0].id });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al crear repartidor (verifica DNI/email duplicado)' });
+    res.status(500).json({ error: 'Error al crear repartidor (verifica DNI/CE o email duplicado)' });
   }
 });
 
