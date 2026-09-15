@@ -187,15 +187,34 @@ CREATE TABLE IF NOT EXISTS pedidos (
   asignado_at        TIMESTAMPTZ,
   recogido_at        TIMESTAMPTZ,
   entregado_at       TIMESTAMPTZ,
+  lat_entrega            NUMERIC(10,7), -- ubicacion que marco el cliente en el checkout
+  lng_entrega            NUMERIC(10,7),
+  lat_repartidor         NUMERIC(10,7), -- ultima posicion GPS del repartidor (solo mientras esta "recogido")
+  lng_repartidor         NUMERIC(10,7),
+  ubicacion_actualizada_at TIMESTAMPTZ,
+  entrega_observada      BOOLEAN NOT NULL DEFAULT false, -- se entrego sin validar el PIN correctamente
+  pago_retenido          BOOLEAN NOT NULL DEFAULT false, -- pago del repartidor pendiente de revision del admin
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT chk_estado CHECK (estado IN (
     'pendiente_pago','pago_rechazado','pagado','preparando',
-    'listo_recoger','recogido','entregado','cancelado'
+    'listo_recoger','recogido','entregado','cancelado','rechazado_en_entrega'
   ))
 );
 CREATE INDEX IF NOT EXISTS idx_pedidos_estado ON pedidos(estado);
 CREATE INDEX IF NOT EXISTS idx_pedidos_repartidor ON pedidos(repartidor_id);
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS lat_entrega NUMERIC(10,7);
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS lng_entrega NUMERIC(10,7);
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS lat_repartidor NUMERIC(10,7);
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS lng_repartidor NUMERIC(10,7);
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS ubicacion_actualizada_at TIMESTAMPTZ;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS entrega_observada BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS pago_retenido BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE pedidos DROP CONSTRAINT IF EXISTS chk_estado;
+ALTER TABLE pedidos ADD CONSTRAINT chk_estado CHECK (estado IN (
+  'pendiente_pago','pago_rechazado','pagado','preparando',
+  'listo_recoger','recogido','entregado','cancelado','rechazado_en_entrega'
+));
 
 -- ---------- ITEMS DE PEDIDO (permite carrito multi-tienda) ----------
 CREATE TABLE IF NOT EXISTS pedido_items (
@@ -209,11 +228,26 @@ CREATE TABLE IF NOT EXISTS pedido_items (
   subtotal         NUMERIC(10,2) NOT NULL,
   comision_pct     NUMERIC(5,2) NOT NULL, -- snapshot de la comision pactada
   comision_monto   NUMERIC(10,2) NOT NULL,
-  estado_tienda    VARCHAR(20) NOT NULL DEFAULT 'pendiente', -- pendiente -> preparando -> listo
+  estado_tienda    VARCHAR(20) NOT NULL DEFAULT 'pendiente', -- pendiente -> confirmado -> listo
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_pedido_items_pedido ON pedido_items(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_pedido_items_tienda ON pedido_items(tienda_id);
+
+-- ---------- RECLAMOS (quejas del cliente sobre un pedido) ----------
+CREATE TABLE IF NOT EXISTS reclamos (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pedido_id    UUID NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+  usuario_id   UUID REFERENCES usuarios(id),
+  motivo       VARCHAR(40) NOT NULL, -- producto_incorrecto | producto_danado | no_recibido | otro
+  descripcion  TEXT,
+  estado       VARCHAR(20) NOT NULL DEFAULT 'abierto', -- abierto | en_revision | resuelto
+  resolucion   TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resuelto_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_reclamos_pedido ON reclamos(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_reclamos_estado ON reclamos(estado);
 
 -- ---------- PAGOS ----------
 CREATE TABLE IF NOT EXISTS pagos (

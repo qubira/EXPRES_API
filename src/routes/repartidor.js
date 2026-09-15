@@ -138,4 +138,88 @@ router.post('/pedidos/:id/entregar', async (req, res) => {
   }
 });
 
+// ---------- ENTREGAR SIN PIN VALIDO ----------
+// El cliente recibio el producto pero no pudo/quiso dar el codigo. Se marca como
+// entregado igual (el repartidor ya hizo su trabajo), pero se observa la entrega
+// y se retiene el pago hasta que el admin revise que paso.
+router.post('/pedidos/:id/entregar-sin-pin', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM pedidos WHERE id = $1 AND repartidor_id = $2', [req.params.id, req.auth.id]);
+    const pedido = rows[0];
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    if (pedido.estado !== 'recogido') {
+      return res.status(400).json({ error: 'El pedido debe estar recogido antes de entregar' });
+    }
+
+    await db.query(
+      `UPDATE pedidos
+       SET estado = 'entregado', entregado_at = now(), entrega_observada = true, pago_retenido = true
+       WHERE id = $1`,
+      [req.params.id]
+    );
+
+    res.json({
+      mensaje: 'Entrega registrada como observada. Tu pago por este pedido quedara retenido hasta que el administrador lo revise.',
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al confirmar la entrega' });
+  }
+});
+
+// ---------- CLIENTE RECHAZO EL PEDIDO ----------
+// El cliente no acepto el producto al momento de la entrega (p. ej. llego danado
+// o no es lo que pidio). No hay desembolso para el repartidor en este caso.
+router.post('/pedidos/:id/rechazado', async (req, res) => {
+  try {
+    const { motivo } = req.body;
+    const { rows } = await db.query('SELECT * FROM pedidos WHERE id = $1 AND repartidor_id = $2', [req.params.id, req.auth.id]);
+    const pedido = rows[0];
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    if (pedido.estado !== 'recogido') {
+      return res.status(400).json({ error: 'El pedido debe estar recogido para poder marcarlo como rechazado' });
+    }
+
+    await db.query(
+      `UPDATE pedidos SET estado = 'rechazado_en_entrega', entregado_at = now() WHERE id = $1`,
+      [req.params.id]
+    );
+    if (motivo) {
+      await db.query(
+        `INSERT INTO reclamos (pedido_id, motivo, descripcion) VALUES ($1,$2,$3)`,
+        [req.params.id, 'otro', `Rechazado por el cliente en la entrega: ${motivo}`]
+      );
+    }
+
+    res.json({ mensaje: 'Pedido marcado como rechazado por el cliente' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar el rechazo' });
+  }
+});
+
+// ---------- COMPARTIR UBICACION EN VIVO (mientras esta "recogido") ----------
+router.post('/pedidos/:id/ubicacion', async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+    if (typeof lat !== 'number' || typeof lng !== 'number') {
+      return res.status(400).json({ error: 'Ubicacion invalida' });
+    }
+    const { rows } = await db.query('SELECT estado FROM pedidos WHERE id = $1 AND repartidor_id = $2', [req.params.id, req.auth.id]);
+    const pedido = rows[0];
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    if (pedido.estado !== 'recogido') {
+      return res.status(400).json({ error: 'Solo se comparte ubicacion mientras el pedido esta en camino' });
+    }
+    await db.query(
+      `UPDATE pedidos SET lat_repartidor = $1, lng_repartidor = $2, ubicacion_actualizada_at = now() WHERE id = $3`,
+      [lat, lng, req.params.id]
+    );
+    res.json({ mensaje: 'Ubicacion actualizada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar la ubicacion' });
+  }
+});
+
 module.exports = router;

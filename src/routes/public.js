@@ -320,7 +320,7 @@ router.post('/pedidos', async (req, res) => {
 
   const client = await db.pool.connect();
   try {
-    const { cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega, items } = req.body;
+    const { cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega, lat_entrega, lng_entrega, items } = req.body;
 
     if (!cliente_nombre || !cliente_telefono || !zona_entrega) {
       return res.status(400).json({ error: 'Faltan datos del cliente o de la zona de entrega' });
@@ -383,11 +383,13 @@ router.post('/pedidos', async (req, res) => {
     const { rows: pedidoRows } = await client.query(
       `INSERT INTO pedidos
         (usuario_id, cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega,
-         estado, monto_productos, delivery_fee, comision_total, monto_total, pin_entrega)
-       VALUES ($1,$2,$3,$4,$5,'pendiente_pago',$6,$7,$8,$9,$10)
+         estado, monto_productos, delivery_fee, comision_total, monto_total, pin_entrega,
+         lat_entrega, lng_entrega)
+       VALUES ($1,$2,$3,$4,$5,'pendiente_pago',$6,$7,$8,$9,$10,$11,$12)
        RETURNING id, estado, monto_productos, delivery_fee, monto_total, created_at`,
       [cliente.id, cliente_nombre, cliente_telefono, zona_entrega, referencia_entrega || null,
-        montoProductos, deliveryFee, comisionTotal, montoTotal, pin]
+        montoProductos, deliveryFee, comisionTotal, montoTotal, pin,
+        lat_entrega || null, lng_entrega || null]
     );
     const pedido = pedidoRows[0];
 
@@ -461,19 +463,23 @@ router.post('/pedidos/:id/pago', upload.single('comprobante'), async (req, res) 
 });
 
 // ---------- SEGUIMIENTO DE PEDIDO ----------
-// El PIN solo se muestra una vez el pago fue confirmado
+// El PIN solo se muestra cuando la tienda ya termino de preparar el pedido (listo_recoger/recogido).
+// La ubicacion del repartidor solo se comparte mientras esta en camino (recogido).
 router.get('/pedidos/:id', async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT id, cliente_nombre, zona_entrega, estado, monto_productos, delivery_fee, monto_total,
-              pin_entrega, created_at, asignado_at, recogido_at, entregado_at
+              pin_entrega, created_at, asignado_at, recogido_at, entregado_at,
+              lat_entrega, lng_entrega, lat_repartidor, lng_repartidor, ubicacion_actualizada_at,
+              entrega_observada
        FROM pedidos WHERE id = $1`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Pedido no encontrado' });
 
     const pedido = rows[0];
-    const pinVisible = ['pagado', 'preparando', 'listo_recoger', 'recogido'].includes(pedido.estado);
+    const pinVisible = ['listo_recoger', 'recogido'].includes(pedido.estado);
+    const ubicacionRepartidorVisible = pedido.estado === 'recogido';
 
     const { rows: items } = await db.query(
       `SELECT pi.nombre_producto, pi.cantidad, pi.precio_unitario, pi.subtotal, pi.estado_tienda, t.nombre as tienda_nombre
@@ -485,6 +491,9 @@ router.get('/pedidos/:id', async (req, res) => {
     res.json({
       ...pedido,
       pin_entrega: pinVisible ? pedido.pin_entrega : null,
+      lat_repartidor: ubicacionRepartidorVisible ? pedido.lat_repartidor : null,
+      lng_repartidor: ubicacionRepartidorVisible ? pedido.lng_repartidor : null,
+      ubicacion_actualizada_at: ubicacionRepartidorVisible ? pedido.ubicacion_actualizada_at : null,
       items,
     });
   } catch (err) {

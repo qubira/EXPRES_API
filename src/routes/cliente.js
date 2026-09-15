@@ -176,13 +176,92 @@ router.get('/pedidos', async (req, res) => {
       [req.auth.id]
     );
     const pedidos = rows.map((p) => {
-      const pinVisible = ['pagado', 'preparando', 'listo_recoger', 'recogido'].includes(p.estado);
+      const pinVisible = ['listo_recoger', 'recogido'].includes(p.estado);
       return { ...p, pin_entrega: pinVisible ? p.pin_entrega : null };
     });
     res.json(pedidos);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener tus pedidos' });
+  }
+});
+
+// ---------- CANCELAR PEDIDO ----------
+// Solo se puede cancelar antes de que la tienda termine de prepararlo. Una vez
+// "listo_recoger" (o mas adelante), ya no hay cancelacion: el cliente puede
+// esperar el pedido o rechazarlo cuando el repartidor llegue, sin reembolso.
+router.post('/pedidos/:id/cancelar', async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { rows } = await client.query('SELECT * FROM pedidos WHERE id = $1 AND usuario_id = $2', [req.params.id, req.auth.id]);
+    const pedido = rows[0];
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    if (['cancelado', 'entregado', 'rechazado_en_entrega'].includes(pedido.estado)) {
+      return res.status(400).json({ error: 'Este pedido ya no se puede cancelar' });
+    }
+    if (!['pendiente_pago', 'pagado', 'preparando'].includes(pedido.estado)) {
+      return res.status(400).json({
+        error: 'Este pedido ya está listo o en camino y no se puede cancelar. Puedes rechazarlo cuando el repartidor llegue, pero no habrá reembolso.',
+      });
+    }
+
+    await client.query('BEGIN');
+    const { rows: items } = await client.query('SELECT producto_id, cantidad FROM pedido_items WHERE pedido_id = $1', [pedido.id]);
+    for (const item of items) {
+      await client.query('UPDATE productos SET stock = stock + $1 WHERE id = $2', [item.cantidad, item.producto_id]);
+    }
+    await client.query(`UPDATE pedidos SET estado = 'cancelado' WHERE id = $1`, [pedido.id]);
+    await client.query('COMMIT');
+
+    res.json({
+      mensaje: pedido.estado === 'pendiente_pago'
+        ? 'Pedido cancelado'
+        : 'Pedido cancelado. Si ya realizaste el pago, un administrador se pondrá en contacto para coordinar tu reembolso.',
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Error al cancelar el pedido' });
+  } finally {
+    client.release();
+  }
+});
+
+// ---------- RECLAMOS ----------
+const MOTIVOS_RECLAMO = ['producto_incorrecto', 'producto_danado', 'no_recibido', 'otro'];
+
+router.post('/pedidos/:id/reclamo', async (req, res) => {
+  try {
+    const { motivo, descripcion } = req.body;
+    if (!MOTIVOS_RECLAMO.includes(motivo)) {
+      return res.status(400).json({ error: 'Motivo de reclamo invalido' });
+    }
+    const { rows } = await db.query('SELECT id FROM pedidos WHERE id = $1 AND usuario_id = $2', [req.params.id, req.auth.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Pedido no encontrado' });
+
+    const { rows: creado } = await db.query(
+      `INSERT INTO reclamos (pedido_id, usuario_id, motivo, descripcion) VALUES ($1,$2,$3,$4) RETURNING id, created_at`,
+      [req.params.id, req.auth.id, motivo, descripcion || null]
+    );
+    res.status(201).json({ id: creado[0].id, mensaje: 'Reclamo registrado. Un administrador lo revisará pronto.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar el reclamo' });
+  }
+});
+
+router.get('/pedidos/:id/reclamos', async (req, res) => {
+  try {
+    const { rows: pedido } = await db.query('SELECT id FROM pedidos WHERE id = $1 AND usuario_id = $2', [req.params.id, req.auth.id]);
+    if (!pedido[0]) return res.status(404).json({ error: 'Pedido no encontrado' });
+    const { rows } = await db.query(
+      'SELECT id, motivo, descripcion, estado, resolucion, created_at FROM reclamos WHERE pedido_id = $1 ORDER BY created_at DESC',
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener los reclamos' });
   }
 });
 

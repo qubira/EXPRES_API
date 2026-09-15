@@ -203,6 +203,38 @@ router.get('/pedidos', async (req, res) => {
   }
 });
 
+// ---------- CONFIRMAR ITEM (la tienda avisa que si tiene el producto y lo va a preparar) ----------
+router.post('/pedidos/:pedidoId/items/:itemId/confirmar', async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { pedidoId, itemId } = req.params;
+    const { rows: item } = await client.query(
+      'SELECT * FROM pedido_items WHERE id = $1 AND pedido_id = $2 AND tienda_id = $3',
+      [itemId, pedidoId, req.auth.id]
+    );
+    if (!item[0]) return res.status(404).json({ error: 'Item no encontrado' });
+    if (item[0].estado_tienda !== 'pendiente') {
+      return res.status(400).json({ error: 'Este item ya fue confirmado' });
+    }
+
+    await client.query('BEGIN');
+    await client.query(`UPDATE pedido_items SET estado_tienda = 'confirmado' WHERE id = $1`, [itemId]);
+    // El pedido pasa a 'preparando' en cuanto la tienda confirma el primer item
+    await client.query(
+      `UPDATE pedidos SET estado = 'preparando' WHERE id = $1 AND estado = 'pagado'`,
+      [pedidoId]
+    );
+    await client.query('COMMIT');
+    res.json({ mensaje: 'Item confirmado' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Error al confirmar el item' });
+  } finally {
+    client.release();
+  }
+});
+
 // ---------- MARCAR ITEM COMO LISTO PARA RECOGER ----------
 router.post('/pedidos/:pedidoId/items/:itemId/listo', async (req, res) => {
   const client = await db.pool.connect();
@@ -213,15 +245,15 @@ router.post('/pedidos/:pedidoId/items/:itemId/listo', async (req, res) => {
       [itemId, pedidoId, req.auth.id]
     );
     if (!item[0]) return res.status(404).json({ error: 'Item no encontrado' });
+    if (item[0].estado_tienda === 'pendiente') {
+      return res.status(400).json({ error: 'Primero confirma el item antes de marcarlo listo' });
+    }
+    if (item[0].estado_tienda === 'listo') {
+      return res.status(400).json({ error: 'Este item ya esta listo' });
+    }
 
     await client.query('BEGIN');
     await client.query(`UPDATE pedido_items SET estado_tienda = 'listo' WHERE id = $1`, [itemId]);
-
-    // Si el pedido esta 'pagado', pasa a 'preparando' automaticamente
-    await client.query(
-      `UPDATE pedidos SET estado = 'preparando' WHERE id = $1 AND estado = 'pagado'`,
-      [pedidoId]
-    );
 
     // Si TODOS los items del pedido estan listos, el pedido pasa a 'listo_recoger'
     const { rows: pendientes } = await client.query(

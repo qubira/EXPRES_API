@@ -354,6 +354,80 @@ router.get('/productos', async (req, res) => {
   res.json(rows);
 });
 
+// ---------- RECLAMOS ----------
+router.get('/reclamos', async (req, res) => {
+  const { estado } = req.query;
+  const params = [];
+  let sql = `
+    SELECT r.id, r.pedido_id, r.motivo, r.descripcion, r.estado, r.resolucion, r.created_at, r.resuelto_at,
+           p.cliente_nombre, p.estado as pedido_estado
+    FROM reclamos r JOIN pedidos p ON p.id = r.pedido_id`;
+  if (estado) {
+    params.push(estado);
+    sql += ` WHERE r.estado = $${params.length}`;
+  }
+  sql += ' ORDER BY r.created_at DESC LIMIT 200';
+  const { rows } = await db.query(sql, params);
+  res.json(rows);
+});
+
+router.post('/reclamos/:id/resolver', async (req, res) => {
+  try {
+    const { resolucion, estado } = req.body;
+    const nuevoEstado = estado === 'en_revision' ? 'en_revision' : 'resuelto';
+    const { rows } = await db.query(
+      `UPDATE reclamos SET estado = $1, resolucion = $2,
+              resuelto_at = CASE WHEN $1 = 'resuelto' THEN now() ELSE resuelto_at END
+       WHERE id = $3 RETURNING id`,
+      [nuevoEstado, resolucion || null, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Reclamo no encontrado' });
+    res.json({ mensaje: 'Reclamo actualizado' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar el reclamo' });
+  }
+});
+
+// ---------- PAGOS RETENIDOS (entregas observadas: se recibio el pedido sin validar el PIN) ----------
+router.get('/pedidos-retenidos', async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT p.id, p.cliente_nombre, p.zona_entrega, p.delivery_fee, p.entregado_at,
+            r.id as repartidor_id, r.nombre as repartidor_nombre
+     FROM pedidos p JOIN repartidores r ON r.id = p.repartidor_id
+     WHERE p.pago_retenido = true ORDER BY p.entregado_at DESC`
+  );
+  res.json(rows);
+});
+
+router.post('/pedidos/:id/liberar-pago', async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { rows } = await client.query('SELECT * FROM pedidos WHERE id = $1', [req.params.id]);
+    const pedido = rows[0];
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    if (!pedido.pago_retenido) {
+      return res.status(400).json({ error: 'Este pedido no tiene un pago retenido' });
+    }
+
+    await client.query('BEGIN');
+    await client.query('UPDATE pedidos SET pago_retenido = false WHERE id = $1', [pedido.id]);
+    await client.query(
+      'UPDATE repartidores SET pago_pendiente = pago_pendiente + $1 WHERE id = $2',
+      [pedido.delivery_fee, pedido.repartidor_id]
+    );
+    await client.query('COMMIT');
+
+    res.json({ mensaje: 'Pago liberado al repartidor' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Error al liberar el pago' });
+  } finally {
+    client.release();
+  }
+});
+
 // ---------- AUDITORIA (conexiones del equipo: admin/tienda/repartidor) ----------
 router.get('/auditoria', async (req, res) => {
   const { rol } = req.query;
