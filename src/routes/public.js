@@ -181,13 +181,17 @@ router.post('/zonas', requireAnyRole(['admin', 'tienda']), async (req, res) => {
 // ---------- TIENDAS ----------
 router.get('/tiendas', async (req, res) => {
   try {
-    const { categoria } = req.query;
+    const { categoria, zona } = req.query;
     const params = [];
     let sql = `SELECT id, nombre, categoria, descripcion, logo_url, zona, contacto_whatsapp
-               FROM tiendas WHERE activo = true`;
+               FROM tiendas WHERE activo = true AND disponible = true`;
     if (categoria) {
       params.push(categoria);
       sql += ` AND categoria = $${params.length}`;
+    }
+    if (zona) {
+      params.push(zona);
+      sql += ` AND zona = $${params.length}`;
     }
     sql += ' ORDER BY nombre ASC';
     const { rows } = await db.query(sql, params);
@@ -202,7 +206,7 @@ router.get('/tiendas/:id', async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT id, nombre, categoria, descripcion, logo_url, zona, contacto_whatsapp
-       FROM tiendas WHERE id = $1 AND activo = true`,
+       FROM tiendas WHERE id = $1 AND activo = true AND disponible = true`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Tienda no encontrada' });
@@ -222,12 +226,12 @@ const CAMPOS_PRODUCTO_PUBLICO = `p.id, p.nombre, p.marca, p.descripcion, p.categ
 
 router.get('/productos', async (req, res) => {
   try {
-    const { categoria, subcategoria, tienda_id, q } = req.query;
+    const { categoria, subcategoria, tienda_id, q, zona } = req.query;
     const params = [];
     let sql = `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
                FROM productos p
                JOIN tiendas t ON t.id = p.tienda_id
-               WHERE p.activo = true AND t.activo = true AND p.stock > 0`;
+               WHERE p.activo = true AND t.activo = true AND t.disponible = true AND p.stock > 0`;
     if (categoria) {
       params.push(categoria);
       sql += ` AND p.categoria = $${params.length}`;
@@ -244,6 +248,10 @@ router.get('/productos', async (req, res) => {
       params.push(`%${q}%`);
       sql += ` AND p.nombre ILIKE $${params.length}`;
     }
+    if (zona) {
+      params.push(zona);
+      sql += ` AND t.zona = $${params.length}`;
+    }
     sql += ' ORDER BY p.created_at DESC';
     const { rows } = await db.query(sql, params);
     res.json(rows);
@@ -256,10 +264,11 @@ router.get('/productos', async (req, res) => {
 // ---------- DETALLE DE UN PRODUCTO + SIMILARES ----------
 router.get('/productos/:id', async (req, res) => {
   try {
+    const { zona } = req.query;
     const { rows } = await db.query(
       `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
        FROM productos p JOIN tiendas t ON t.id = p.tienda_id
-       WHERE p.id = $1 AND p.activo = true AND t.activo = true`,
+       WHERE p.id = $1 AND p.activo = true AND t.activo = true AND t.disponible = true`,
       [req.params.id]
     );
     const producto = rows[0];
@@ -270,10 +279,10 @@ router.get('/productos/:id', async (req, res) => {
       const { rows: relacionados } = await db.query(
         `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
          FROM productos p JOIN tiendas t ON t.id = p.tienda_id
-         WHERE p.activo = true AND t.activo = true AND p.stock > 0
-           AND p.subcategoria = $1 AND p.id != $2
+         WHERE p.activo = true AND t.activo = true AND t.disponible = true AND p.stock > 0
+           AND p.subcategoria = $1 AND p.id != $2 ${zona ? 'AND t.zona = $3' : ''}
          ORDER BY p.created_at DESC LIMIT 8`,
-        [producto.subcategoria, producto.id]
+        zona ? [producto.subcategoria, producto.id, zona] : [producto.subcategoria, producto.id]
       );
       similares = relacionados;
     }
@@ -281,10 +290,10 @@ router.get('/productos/:id', async (req, res) => {
       const { rows: mismaCategoria } = await db.query(
         `SELECT ${CAMPOS_PRODUCTO_PUBLICO}
          FROM productos p JOIN tiendas t ON t.id = p.tienda_id
-         WHERE p.activo = true AND t.activo = true AND p.stock > 0
-           AND p.categoria = $1 AND p.id != $2
+         WHERE p.activo = true AND t.activo = true AND t.disponible = true AND p.stock > 0
+           AND p.categoria = $1 AND p.id != $2 ${zona ? 'AND t.zona = $3' : ''}
          ORDER BY p.created_at DESC LIMIT 8`,
-        [producto.categoria, producto.id]
+        zona ? [producto.categoria, producto.id, zona] : [producto.categoria, producto.id]
       );
       const idsExistentes = new Set(similares.map((s) => s.id));
       for (const item of mismaCategoria) {

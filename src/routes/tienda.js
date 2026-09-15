@@ -49,11 +49,19 @@ router.use(requireRole('tienda'));
 router.get('/perfil', async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, nombre, categoria, subcategoria, descripcion, zona, dni_titular, nombre_titular, comision_pactada, contacto_telefono,
-            contacto_whatsapp, logo_url, email
+            contacto_whatsapp, logo_url, email, disponible
      FROM tiendas WHERE id = $1`,
     [req.auth.id]
   );
   res.json(rows[0]);
+});
+
+// ---------- DISPONIBILIDAD (pausa temporal: mientras esta apagada, sus
+// productos no se muestran a los clientes, sin tocar la activacion del admin) ----------
+router.post('/disponibilidad', async (req, res) => {
+  const { disponible } = req.body;
+  await db.query('UPDATE tiendas SET disponible = $1 WHERE id = $2', [!!disponible, req.auth.id]);
+  res.json({ mensaje: disponible ? 'Ahora estás disponible' : 'Ya no estás disponible', disponible: !!disponible });
 });
 
 // ---------- ACTUALIZAR PERFIL ----------

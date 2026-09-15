@@ -97,13 +97,15 @@ CREATE TABLE IF NOT EXISTS tiendas (
   comision_pactada   NUMERIC(5,2) NOT NULL DEFAULT 12.00, -- % comision de la plataforma
   email              VARCHAR(160) UNIQUE,
   password_hash      VARCHAR(255) NOT NULL,
-  activo             BOOLEAN NOT NULL DEFAULT true,
+  activo             BOOLEAN NOT NULL DEFAULT true, -- activacion/baja: la controla el administrador
+  disponible         BOOLEAN NOT NULL DEFAULT true, -- pausa temporal: la controla la propia tienda
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(100);
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS dni_titular VARCHAR(20);
 ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS nombre_titular VARCHAR(150);
+ALTER TABLE tiendas ADD COLUMN IF NOT EXISTS disponible BOOLEAN NOT NULL DEFAULT true;
 CREATE INDEX IF NOT EXISTS idx_tiendas_categoria ON tiendas(categoria);
 CREATE INDEX IF NOT EXISTS idx_tiendas_activo ON tiendas(activo);
 

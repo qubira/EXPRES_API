@@ -212,7 +212,7 @@ router.post('/pedidos/:id/asignar', async (req, res) => {
 
 // ---------- TIENDAS (CRUD) ----------
 router.get('/tiendas', async (req, res) => {
-  const { rows } = await db.query('SELECT id, nombre, categoria, subcategoria, zona, dni_titular, nombre_titular, comision_pactada, activo, email, contacto_whatsapp, logo_url, created_at FROM tiendas ORDER BY created_at DESC');
+  const { rows } = await db.query('SELECT id, nombre, categoria, subcategoria, zona, dni_titular, nombre_titular, comision_pactada, activo, disponible, email, contacto_whatsapp, logo_url, created_at FROM tiendas ORDER BY created_at DESC');
   res.json(rows);
 });
 
