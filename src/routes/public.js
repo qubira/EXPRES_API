@@ -325,6 +325,9 @@ router.post('/pedidos', async (req, res) => {
     if (!cliente_nombre || !cliente_telefono || !zona_entrega) {
       return res.status(400).json({ error: 'Faltan datos del cliente o de la zona de entrega' });
     }
+    if (!referencia_entrega || !referencia_entrega.trim()) {
+      return res.status(400).json({ error: 'Cuéntanos una referencia para que el repartidor te encuentre (ej. color de sombrilla, cerca a qué)' });
+    }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'El carrito esta vacio' });
     }

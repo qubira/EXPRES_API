@@ -189,7 +189,8 @@ router.get('/pedidos', async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT pi.id as item_id, pi.nombre_producto, pi.cantidad, pi.subtotal, pi.estado_tienda,
-              p.id as pedido_id, p.estado as pedido_estado, p.zona_entrega, p.created_at
+              p.id as pedido_id, p.estado as pedido_estado, p.zona_entrega, p.created_at,
+              p.cliente_nombre, p.cliente_telefono, p.referencia_entrega, p.lat_entrega, p.lng_entrega
        FROM pedido_items pi
        JOIN pedidos p ON p.id = pi.pedido_id
        WHERE pi.tienda_id = $1 AND p.estado NOT IN ('pendiente_pago','pago_rechazado','cancelado')
