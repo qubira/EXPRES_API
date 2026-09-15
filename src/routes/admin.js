@@ -46,7 +46,9 @@ router.use(requireRole('admin'));
 router.post('/upload', upload.single('imagen'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No se recibio ninguna imagen' });
-    const resultado = await subirImagen(req.file.buffer, 'express-ancon/repartidores');
+    const carpetasPermitidas = { tiendas: 'express-ancon/tiendas', repartidores: 'express-ancon/repartidores' };
+    const carpeta = carpetasPermitidas[req.query.carpeta] || 'express-ancon/repartidores';
+    const resultado = await subirImagen(req.file.buffer, carpeta);
     res.json({ url: resultado.secure_url });
   } catch (err) {
     console.error(err);
@@ -210,13 +212,13 @@ router.post('/pedidos/:id/asignar', async (req, res) => {
 
 // ---------- TIENDAS (CRUD) ----------
 router.get('/tiendas', async (req, res) => {
-  const { rows } = await db.query('SELECT id, nombre, categoria, subcategoria, zona, dni_titular, nombre_titular, comision_pactada, activo, email, contacto_whatsapp, created_at FROM tiendas ORDER BY created_at DESC');
+  const { rows } = await db.query('SELECT id, nombre, categoria, subcategoria, zona, dni_titular, nombre_titular, comision_pactada, activo, email, contacto_whatsapp, logo_url, created_at FROM tiendas ORDER BY created_at DESC');
   res.json(rows);
 });
 
 router.post('/tiendas', async (req, res) => {
   try {
-    const { nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password } = req.body;
+    const { nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password, logo_url } = req.body;
     if (!nombre || !categoria || !email || !password) {
       return res.status(400).json({ error: 'Nombre, categoria, email y password son obligatorios' });
     }
@@ -225,10 +227,10 @@ router.post('/tiendas', async (req, res) => {
     }
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await db.query(
-      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password_hash, activo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true) RETURNING id`,
+      `INSERT INTO tiendas (nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, email, password_hash, logo_url, activo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true) RETURNING id`,
       [nombre, categoria, subcategoria || null, descripcion || null, dni_titular || null, nombre_titular || null, contacto_telefono || null, contacto_whatsapp || null,
-        zona || null, comision_pactada || 12.0, email, hash]
+        zona || null, comision_pactada || 12.0, email, hash, logo_url || null]
     );
     res.status(201).json({ id: rows[0].id });
   } catch (err) {
@@ -239,15 +241,15 @@ router.post('/tiendas', async (req, res) => {
 
 router.put('/tiendas/:id', async (req, res) => {
   try {
-    const { nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, activo } = req.body;
+    const { nombre, categoria, subcategoria, descripcion, dni_titular, nombre_titular, contacto_telefono, contacto_whatsapp, zona, comision_pactada, activo, logo_url } = req.body;
     if (dni_titular && !/^\d{8}$/.test(dni_titular)) {
       return res.status(400).json({ error: 'El DNI debe tener 8 dígitos' });
     }
     await db.query(
       `UPDATE tiendas SET nombre=$1, categoria=$2, subcategoria=$3, descripcion=$4, dni_titular=$5, nombre_titular=$6, contacto_telefono=$7,
-        contacto_whatsapp=$8, zona=$9, comision_pactada=$10, activo=$11 WHERE id=$12`,
+        contacto_whatsapp=$8, zona=$9, comision_pactada=$10, activo=$11, logo_url=$12 WHERE id=$13`,
       [nombre, categoria, subcategoria || null, descripcion || null, dni_titular || null, nombre_titular || null, contacto_telefono || null, contacto_whatsapp || null,
-        zona || null, comision_pactada, activo, req.params.id]
+        zona || null, comision_pactada, activo, logo_url || null, req.params.id]
     );
     res.json({ mensaje: 'Tienda actualizada' });
   } catch (err) {
