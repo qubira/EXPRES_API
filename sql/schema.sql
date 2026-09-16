@@ -294,6 +294,15 @@ ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS email_contacto VARCHAR(160);
 ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS permite_whatsapp BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS imagenes JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS plazo_respuesta_hasta TIMESTAMPTZ;
+-- Libro de Reclamaciones Virtual (canal formal separado del reclamo ligado a
+-- un pedido): origen='libro_reclamaciones', con tipo_libro distinguiendo
+-- Reclamo (disconformidad con el producto/servicio) de Queja (disconformidad
+-- con la atencion, no ligada al producto en si), segun el Codigo de
+-- Proteccion y Defensa del Consumidor.
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS tipo_libro VARCHAR(10);
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS direccion_reclamante TEXT;
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS bien_contratado TEXT;
+ALTER TABLE reclamos ADD COLUMN IF NOT EXISTS solicitud_consumidor TEXT;
 CREATE INDEX IF NOT EXISTS idx_reclamos_pedido ON reclamos(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_reclamos_estado ON reclamos(estado);
 

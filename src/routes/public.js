@@ -542,6 +542,71 @@ router.get('/pedidos/:id', async (req, res) => {
   }
 });
 
+// ---------- LIBRO DE RECLAMACIONES VIRTUAL ----------
+// Canal formal exigido por el Codigo de Proteccion y Defensa del Consumidor
+// (INDECOPI): publico, sin necesidad de cuenta ni pedido. Se guarda en la
+// misma tabla "reclamos" que el resto (origen='libro_reclamaciones'), pero
+// con sus propios campos legales (direccion, bien contratado, lo que
+// solicita el consumidor) y un plazo de respuesta de 30 dias calendario
+// (distinto a los 7 dias habiles del reclamo ligado a un pedido, que es un
+// SLA operativo interno, no el plazo legal del libro).
+router.post('/libro-reclamaciones', upload.array('imagenes', 4), async (req, res) => {
+  try {
+    const {
+      tipo, nombre_reclamante, tipo_documento, dni_ce, direccion_reclamante,
+      telefono_contacto, email_contacto, permite_whatsapp,
+      bien_contratado, descripcion, solicitud_consumidor, pedido_id,
+    } = req.body;
+
+    if (!['reclamo', 'queja'].includes(tipo)) {
+      return res.status(400).json({ error: 'Indica si es un Reclamo o una Queja' });
+    }
+    if (!nombre_reclamante || !dni_ce || !direccion_reclamante || !(telefono_contacto || email_contacto)) {
+      return res.status(400).json({ error: 'Nombre, documento, dirección y un dato de contacto (teléfono o correo) son obligatorios' });
+    }
+    if (!bien_contratado || !descripcion || !solicitud_consumidor) {
+      return res.status(400).json({ error: 'Completa el detalle del bien/servicio, la reclamación y lo que solicitas' });
+    }
+
+    let pedidoIdValido = null;
+    if (pedido_id) {
+      const { rows } = await db.query('SELECT id FROM pedidos WHERE id = $1', [pedido_id]);
+      if (rows[0]) pedidoIdValido = rows[0].id;
+    }
+
+    const imagenes = [];
+    for (const file of req.files || []) {
+      try {
+        const resultado = await subirImagen(file.buffer, 'express-ancon/reclamos');
+        imagenes.push(resultado.secure_url || resultado.url);
+      } catch (err) {
+        console.error('Error subiendo imagen del libro de reclamaciones', err);
+      }
+    }
+
+    const plazo = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dias calendario (plazo legal INDECOPI)
+    const { rows } = await db.query(
+      `INSERT INTO reclamos (
+        pedido_id, motivo, descripcion, origen, tipo_libro,
+        tipo_documento, dni_ce, nombre_reclamante, direccion_reclamante,
+        telefono_contacto, email_contacto, permite_whatsapp,
+        bien_contratado, solicitud_consumidor, imagenes, plazo_respuesta_hasta
+      ) VALUES ($1,'otro',$2,'libro_reclamaciones',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      RETURNING id, created_at, plazo_respuesta_hasta`,
+      [
+        pedidoIdValido, descripcion, tipo,
+        tipo_documento || 'dni', dni_ce, nombre_reclamante, direccion_reclamante,
+        telefono_contacto || null, email_contacto || null, !!permite_whatsapp,
+        bien_contratado, solicitud_consumidor, JSON.stringify(imagenes), plazo,
+      ]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al registrar tu reclamación' });
+  }
+});
+
 // ---------- REGISTRO DE TIENDAS SOCIAS (solicitud) ----------
 router.post('/tiendas/solicitud', async (req, res) => {
   try {
