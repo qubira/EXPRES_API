@@ -507,11 +507,12 @@ router.post('/pedidos/:id/pago', upload.single('comprobante'), async (req, res) 
 router.get('/pedidos/:id', async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT id, cliente_nombre, zona_entrega, estado, monto_productos, delivery_fee, monto_total,
-              pin_entrega, created_at, asignado_at, recogido_at, entregado_at,
-              lat_entrega, lng_entrega, lat_repartidor, lng_repartidor, ubicacion_actualizada_at,
-              entrega_observada
-       FROM pedidos WHERE id = $1`,
+      `SELECT p.id, p.cliente_nombre, p.zona_entrega, p.estado, p.monto_productos, p.delivery_fee, p.monto_total,
+              p.pin_entrega, p.created_at, p.asignado_at, p.recogido_at, p.entregado_at,
+              p.lat_entrega, p.lng_entrega, p.lat_repartidor, p.lng_repartidor, p.ubicacion_actualizada_at,
+              p.entrega_observada,
+              (SELECT estado FROM reclamos WHERE pedido_id = p.id AND estado != 'resuelto' ORDER BY created_at DESC LIMIT 1) as reclamo_estado
+       FROM pedidos p WHERE p.id = $1`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Pedido no encontrado' });
