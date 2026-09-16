@@ -194,6 +194,7 @@ ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS contacto_emergencia_nombre VAR
 ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS contacto_emergencia_telefono VARCHAR(20);
 ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS antecedentes_penales BOOLEAN;
 ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS foto_url TEXT;
+ALTER TABLE repartidores ADD COLUMN IF NOT EXISTS zona VARCHAR(160);
 
 -- ---------- PEDIDOS ----------
 -- estado: pendiente_pago -> pagado -> preparando -> listo_recoger -> recogido -> entregado

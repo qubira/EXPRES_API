@@ -1,11 +1,24 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 const db = require('../db');
 const { firmarToken, requireRole } = require('../middleware/auth');
+const { subirImagen } = require('../utils/cloudinary');
 const { registrarLogin } = require('../utils/auditoria');
 const { crearSesion } = require('../utils/sesiones');
 
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(jpeg|png|webp|jpg)$/.test(file.mimetype)) {
+      return cb(new Error('Solo se permiten imagenes (jpg, png, webp)'));
+    }
+    cb(null, true);
+  },
+});
 
 // ---------- LOGIN ----------
 router.post('/login', async (req, res) => {
@@ -32,13 +45,67 @@ router.post('/login', async (req, res) => {
 
 router.use(requireRole('repartidor'));
 
+// ---------- SUBIR FOTO DE PERFIL ----------
+router.post('/upload', upload.single('imagen'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibio ninguna imagen' });
+    const resultado = await subirImagen(req.file.buffer, 'express-ancon/repartidores');
+    res.json({ url: resultado.secure_url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al subir la imagen' });
+  }
+});
+
 // ---------- MI PERFIL ----------
 router.get('/perfil', async (req, res) => {
   const { rows } = await db.query(
-    'SELECT id, nombre, telefono, disponible, pago_pendiente FROM repartidores WHERE id = $1',
+    'SELECT id, nombre, telefono, zona, foto_url, disponible, pago_pendiente FROM repartidores WHERE id = $1',
     [req.auth.id]
   );
   res.json(rows[0]);
+});
+
+router.put('/perfil', async (req, res) => {
+  try {
+    const { nombre, telefono, zona, foto_url } = req.body;
+    if (!nombre || !telefono) {
+      return res.status(400).json({ error: 'Nombre y teléfono son obligatorios' });
+    }
+    const { rows } = await db.query(
+      `UPDATE repartidores SET nombre=$1, telefono=$2, zona=$3, foto_url=$4
+       WHERE id=$5
+       RETURNING id, nombre, telefono, zona, foto_url`,
+      [nombre, telefono, zona || null, foto_url || null, req.auth.id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al actualizar el perfil' });
+  }
+});
+
+router.post('/perfil/password', async (req, res) => {
+  try {
+    const { password_actual, password_nueva } = req.body;
+    if (!password_actual || !password_nueva) {
+      return res.status(400).json({ error: 'Ingresa tu contraseña actual y la nueva' });
+    }
+    if (password_nueva.length < 6) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+    }
+    const { rows } = await db.query('SELECT password_hash FROM repartidores WHERE id = $1', [req.auth.id]);
+    const rep = rows[0];
+    if (!rep || !(await bcrypt.compare(password_actual, rep.password_hash))) {
+      return res.status(401).json({ error: 'La contraseña actual no es correcta' });
+    }
+    const hash = await bcrypt.hash(password_nueva, 10);
+    await db.query('UPDATE repartidores SET password_hash = $1 WHERE id = $2', [hash, req.auth.id]);
+    res.json({ mensaje: 'Contraseña actualizada' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al cambiar la contraseña' });
+  }
 });
 
 router.post('/disponibilidad', async (req, res) => {
@@ -63,6 +130,53 @@ router.get('/pedidos', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener pedidos' });
+  }
+});
+
+// ---------- PEDIDOS DISPONIBLES PARA TOMAR (sin repartidor asignado, en mi zona) ----------
+router.get('/pedidos/disponibles', async (req, res) => {
+  try {
+    const { rows: repRows } = await db.query('SELECT zona FROM repartidores WHERE id = $1', [req.auth.id]);
+    const zona = repRows[0] && repRows[0].zona;
+    if (!zona) return res.json([]); // sin zona configurada en su perfil, no le mostramos nada aun
+
+    const { rows } = await db.query(
+      `SELECT id, cliente_nombre, zona_entrega, referencia_entrega, estado,
+              monto_total, delivery_fee, created_at, lat_entrega, lng_entrega
+       FROM pedidos
+       WHERE repartidor_id IS NULL AND estado IN ('pagado','preparando','listo_recoger')
+         AND zona_entrega ILIKE '%' || $1 || '%'
+       ORDER BY created_at ASC`,
+      [zona]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener pedidos disponibles' });
+  }
+});
+
+// ---------- TOMAR UN PEDIDO DEL POOL ----------
+router.post('/pedidos/:id/reclamar', async (req, res) => {
+  try {
+    const { rows: repRows } = await db.query('SELECT disponible, zona FROM repartidores WHERE id = $1', [req.auth.id]);
+    const rep = repRows[0];
+    if (!rep.disponible) return res.status(400).json({ error: 'Debes estar disponible para tomar pedidos' });
+    if (!rep.zona) return res.status(400).json({ error: 'Configura tu zona en Mi perfil antes de tomar pedidos' });
+
+    const { rows } = await db.query(
+      `UPDATE pedidos SET repartidor_id = $1, asignado_at = now()
+       WHERE id = $2 AND repartidor_id IS NULL AND estado IN ('pagado','preparando','listo_recoger')
+         AND zona_entrega ILIKE '%' || $3 || '%'
+       RETURNING id`,
+      [req.auth.id, req.params.id, rep.zona]
+    );
+    if (!rows[0]) return res.status(409).json({ error: 'Ese pedido ya no está disponible' });
+
+    res.json({ mensaje: 'Pedido tomado. Ya está en Mis entregas.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al tomar el pedido' });
   }
 });
 
